@@ -30,11 +30,35 @@ export function createEvaluationStore({
   const database = new DatabaseSync(databasePath);
   // cold startでは別projectのprocessも同じ未作成DBを同時に開き得る。
   // WAL化とschema作成が最初のwrite lockを競う前に、既定5秒のbounded waitを有効にする。
-  database.exec(`PRAGMA busy_timeout=${busyTimeoutMs};`);
-  database.exec('PRAGMA foreign_keys=ON;');
-  initialize(database);
-  database.exec('PRAGMA journal_mode=WAL;');
-  return new EvaluationStore(database);
+  try {
+    database.exec(`PRAGMA busy_timeout=${busyTimeoutMs};`);
+    database.exec('PRAGMA foreign_keys=ON;');
+    initialize(database);
+    enableWal(database, busyTimeoutMs);
+    database.exec(`PRAGMA busy_timeout=${busyTimeoutMs};`);
+    return new EvaluationStore(database);
+  } catch (error) {
+    database.close();
+    throw error;
+  }
+}
+
+function enableWal(database, busyTimeoutMs) {
+  // journal mode変更のlock昇格はdeadlock回避でbusy handlerを呼ばない。
+  // SQLITE_BUSYだけを同じ待機予算で再試行し、別エラーと期限切れは呼出元へ返す。
+  const deadline = performance.now() + busyTimeoutMs;
+  const wait = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+  for (;;) {
+    database.exec(`PRAGMA busy_timeout=${Math.max(1, Math.ceil(deadline - performance.now()))};`);
+    try {
+      database.exec('PRAGMA journal_mode=WAL;');
+      return;
+    } catch (error) {
+      const remaining = deadline - performance.now();
+      if (error.errcode !== 5 || remaining <= 0) throw error;
+      Atomics.wait(wait, 0, 0, Math.min(10, remaining));
+    }
+  }
 }
 
 export class EvaluationStore {

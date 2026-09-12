@@ -337,6 +337,8 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   death. The JSON aggregate itself is written by fsync plus atomic rename. Windows store access replaces
   inherited/ambient ACLs with one FullControl ACE for the current process SID and verifies the readback
   before continuing.
+  WindowsのACL設定とprocess識別にはPowerShell 7を使う。保存先の権限は
+  `Set-Acl`／`Get-Acl`で設定・読戻しし、旧.NET Framework専用APIに依存しない。
 - `spotter diagnostics runtime-errors` is the read-only allow-listed snapshot. `diagnostics logs` and
   `diagnostics factory` expose only bounded collection/store status and counts. Cursor acknowledgement
   is monotonic; resolve/reopen advance sequence; compaction preserves all unacknowledged records.
@@ -348,6 +350,9 @@ background collector, retry queue, or reconciliation service. A successful UserP
 observation; the same parent turn's canonical tool IDs close its item results. A missing Stop is closed at
 the next prompt from the usage evidence already collected, while `usage_status=incomplete` remains
 `outcome_missing` and is excluded from the fit-rate denominator.
+
+初期化時のWAL切替はSQLiteのlock昇格を伴う。busy handlerを呼ばず返る`SQLITE_BUSY`だけを
+既存の待機予算内で再試行し、予算超過とそれ以外のエラーは失敗として返す。
 
 The stable readings are:
 

@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { version } from '../version.mjs';
+import { WINDOWS_POWERSHELL_COMMAND } from '../platform/spawn.mjs';
 
 export const RUNTIME_ERROR_STORE_SCHEMA = 'spotter.runtime_errors.v1';
 export const RUNTIME_ERROR_STATE_SCHEMA_VERSION = '1.0';
@@ -614,7 +615,6 @@ function validatePrivateStat(info, options, { directory, platform }) {
 
 export function buildWindowsAclPowerShell({ directory }) {
   const securityType = directory ? 'DirectorySecurity' : 'FileSecurity';
-  const ioType = directory ? 'Directory' : 'File';
   const inheritance = directory
     ? '[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit'
     : '[System.Security.AccessControl.InheritanceFlags]::None';
@@ -628,8 +628,8 @@ export function buildWindowsAclPowerShell({ directory }) {
     `$inheritance = ${inheritance}`,
     '$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, "FullControl", $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)',
     '$acl.AddAccessRule($rule)',
-    `[System.IO.${ioType}]::SetAccessControl($target, $acl)`,
-    `$readback = [System.IO.${ioType}]::GetAccessControl($target)`,
+    'Set-Acl -LiteralPath $target -AclObject $acl',
+    '$readback = Get-Acl -LiteralPath $target',
     '$ownerSid = $readback.GetOwner([System.Security.Principal.SecurityIdentifier]).Value',
     '$entries = @($readback.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))',
     '$valid = $entries.Count -eq 1 -and $ownerSid -eq $sid.Value -and $entries[0].IdentityReference.Value -eq $sid.Value -and $entries[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and -not $entries[0].IsInherited -and (($entries[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl)',
@@ -638,7 +638,7 @@ export function buildWindowsAclPowerShell({ directory }) {
 }
 
 async function runWindowsAcl(path, { directory }, options) {
-  const executable = options.powerShellPath ?? 'powershell.exe';
+  const executable = options.powerShellPath ?? WINDOWS_POWERSHELL_COMMAND;
   const script = buildWindowsAclPowerShell({ directory });
   await spawnForExit(executable, ['-NoProfile', '-NonInteractive', '-Command', script], {
     timeoutMs: options.aclTimeoutMs ?? 15_000,
@@ -659,7 +659,7 @@ export async function processStartIdentity(pid, options = {}) {
     }
     if (platform === 'win32') {
       const script = `$p = Get-Process -Id ${pid} -ErrorAction Stop; [Console]::Out.Write($p.StartTime.ToUniversalTime().Ticks)`;
-      const output = await spawnCapture(options.powerShellPath ?? 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeoutMs: 1_000 });
+      const output = await spawnCapture(options.powerShellPath ?? WINDOWS_POWERSHELL_COMMAND, ['-NoProfile', '-NonInteractive', '-Command', script], { timeoutMs: 1_000 });
       return output ? `windows:${output.trim()}` : null;
     }
     const output = await spawnCapture('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], { timeoutMs: 1_000 });

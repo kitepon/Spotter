@@ -14,6 +14,7 @@ import { win32 } from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileP = promisify(execFile);
+export const WINDOWS_POWERSHELL_COMMAND = 'pwsh.exe';
 
 // On Windows, npm-global CLI tools (e.g. `claude`, `codex`, `claude-mermaid`) ship as
 // `<name>.cmd` batch wrappers. Node's `child_process` without `shell: true` calls

@@ -14,7 +14,7 @@ test('evaluation store cold-starts one new SQLite database from two workers', as
   try {
     for (let round = 0; round < 12; round += 1) {
       const databasePath = join(directory, `evaluation-${round}.db`);
-      const startGate = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+      const startGate = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
       const alpha = startColdWriter({
         databasePath,
         projectPath: `/projects/alpha-${round}`,
@@ -112,6 +112,22 @@ async function writeOneColdTurn() {
       Atomics.wait(gate, 0, 0, 100);
     }
 
+    // WAL切替の衝突を実SQLiteで発生させ、thread起動時間の偶然へ依存させない。
+    const { DatabaseSync } = await import('node:sqlite');
+    const originalExec = DatabaseSync.prototype.exec;
+    let firstWal = true;
+    DatabaseSync.prototype.exec = function(sql) {
+      if (sql === 'PRAGMA journal_mode=WAL;' && firstWal) {
+        firstWal = false;
+        Atomics.add(gate, 1, 1);
+        Atomics.notify(gate, 1);
+        while (Atomics.load(gate, 1) < 2) {
+          if (Date.now() >= deadline) throw new Error('WAL切替の同期待機が期限切れです');
+          Atomics.wait(gate, 1, 1, 100);
+        }
+      }
+      return originalExec.call(this, sql);
+    };
     const { createEvaluationStore: openStore } = await import(workerData.storeModuleUrl);
     const store = openStore({ databasePath: workerData.databasePath });
     try {

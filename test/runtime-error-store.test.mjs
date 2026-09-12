@@ -466,6 +466,8 @@ test('cold SQLite lock creation preserves all 32 concurrent observations across 
   const childSource = `
 import { observeRuntimeError } from ${JSON.stringify(runtimeStoreModule)};
 const options = JSON.parse(Buffer.from(process.argv[1], 'base64url').toString('utf8'));
+// 並行保存の試験へwall clock補正を混ぜず、全writerに同じ観測時刻を渡す。
+options.now = () => new Date('2026-07-13T00:00:00.000Z');
 const result = await observeRuntimeError('daemon_transport', options);
 if (!result.collected) process.exit(3);
 `;
@@ -500,6 +502,16 @@ test('runtime store rejects duplicate record sequences', async () => {
     code: 'E_RUNTIME_ERROR_STORE',
     message: 'duplicate runtime error sequence',
   });
+});
+
+test('観測時計の後退は明示失敗とし保存済み時刻を丸めない', async () => {
+  const box = await sandbox();
+  await observeRuntimeError('daemon_transport', options(box));
+  const before = await readFile(box.storePath, 'utf8');
+  await assert.rejects(observeRuntimeError('daemon_transport', options(box, {
+    now: () => new Date('2026-07-12T23:59:59.999Z'),
+  })), { code: 'E_RUNTIME_ERROR_STORE', message: 'runtime error record schema mismatch' });
+  assert.equal(await readFile(box.storePath, 'utf8'), before);
 });
 
 test('resolve rejects clock rollback before mutation and store validation rejects regressed resolved_at', async () => {
@@ -574,10 +586,21 @@ test('Windows ACL script rebuilds current-SID-only DACL and verifies readback', 
   const script = buildWindowsAclPowerShell({ directory: false });
   assert.match(script, /SetAccessRuleProtection\(\$true, \$false\)/);
   assert.match(script, /SecurityIdentifier/);
-  assert.match(script, /SetAccessControl/);
-  assert.match(script, /GetAccessControl/);
+  assert.match(script, /Set-Acl -LiteralPath/);
+  assert.match(script, /Get-Acl -LiteralPath/);
   assert.match(script, /AccessControlType/);
   assert.doesNotMatch(script, /Everyone|Authenticated Users|BUILTIN\\Users/);
+});
+
+test('Windowsの実PowerShell 7で保存directoryとfileのACLを設定し読み戻す', {
+  skip: process.platform !== 'win32',
+}, async () => {
+  const box = await sandbox();
+  await prepareRuntimeErrorStoreDirectory(options(box));
+  const result = await observeRuntimeError('daemon_transport', options(box));
+  assert.equal(result.collected, true);
+  const snapshot = await readRuntimeErrorSnapshot(options(box));
+  assert.equal(snapshot.records[0].occurrence_count, 1);
 });
 
 test('runtime error safe observer never stops Spotter and emits one fixed diagnostic', async () => {
