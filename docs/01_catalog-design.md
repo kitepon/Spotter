@@ -166,7 +166,7 @@ logしない。DB自体のJSON/schema違反は
 | スキル | [investigate-skills.mjs](../src/tool-db/investigate-skills.mjs) | user scope `~/.claude/skills/`、project scope `<projectRoot>/.claude/skills/`、有効化プラグインの `skills/` |
 | サブエージェント | [investigate-agents.mjs](../src/tool-db/investigate-agents.mjs) | user scope `~/.claude/agents/`、project scope `<projectRoot>/.claude/agents/`、有効化プラグインの `agents/` |
 
-Codex host の refresh は [investigate-codex.mjs](../src/tool-db/investigate-codex.mjs) で別経路を使う。MCP は `codex mcp list` / `codex mcp get` で membership と spawn 情報を取り、同じ JSON-RPC `tools/list` で description を取得する。Codex skills は `~/.codex/skills/.system/`、`~/.codex/skills/`、`<projectRoot>/.codex/skills/`、および `~/.codex/config.toml` で enabled な plugin cache の `skills/` から frontmatter description を読む。Claude の `.claude` 設定を Codex refresh の代替 source として使わない。
+Codex host の refresh は [investigate-codex.mjs](../src/tool-db/investigate-codex.mjs) で別経路を使う。MCP は `codex mcp list` / `codex mcp get --json` で membership と spawn 情報を取り、同じ JSON-RPC `tools/list` で description を取得する。実行用envは構造化JSONの値だけを使う。表示形式の伏字を実行設定へ混ぜず、JSON不正は明示エラーとする。envの値はMCP子processへの受渡しにだけ使い、catalogやlogへ保存しない。Codex skills は `~/.codex/skills/.system/`、`~/.codex/skills/`、`<projectRoot>/.codex/skills/`、および `~/.codex/config.toml` で enabled な plugin cache の `skills/` から frontmatter description を読む。Claude の `.claude` 設定を Codex refresh の代替 source として使わない。
 
 プラグインの有効化判定: user scope `~/.claude/settings.json` と project scope `.claude/settings.local.json` の `enabledPlugins` を両方見て、どちらかで `true` なら有効。`~/.claude/plugins/installed_plugins.json` の `installPath` から実体にアクセスする。
 

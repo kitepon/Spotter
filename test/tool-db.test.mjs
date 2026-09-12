@@ -15,6 +15,7 @@ import {
 import { resolveAll } from '../src/tool-db/lookup.mjs';
 import { readLocal } from '../src/tool-db/refresh.mjs';
 import {
+  listCodexMcpServers,
   parseCodexMcpGetOutput,
   parseCodexMcpListOutput,
   parseEnabledCodexPluginIds,
@@ -1069,14 +1070,11 @@ disabled    node           server.js              -    -    disabled Unsupported
 `;
   assert.deepEqual(parseCodexMcpListOutput(list), ['caveat']);
 
-  const get = `caveat
-  enabled: true
-  transport: stdio
-  command: /usr/bin/node
-  args: /bin/caveat mcp-server --name 'two words'
-  cwd: -
-  env: -
-`;
+  const get = JSON.stringify({
+    name: 'caveat', enabled: true,
+    transport: { type: 'stdio', command: '/usr/bin/node',
+      args: ['/bin/caveat', 'mcp-server', '--name', 'two words'], cwd: null, env: null },
+  });
   assert.deepEqual(parseCodexMcpGetOutput(get), {
     name: 'caveat',
     transport: 'stdio',
@@ -1093,6 +1091,46 @@ enabled = true
 [plugins."figma@openai-curated"]
 enabled = false
 `), ['github@openai-curated']);
+});
+
+test('codex investigation: JSONの実envを保持し、伏字を含む表示形式は拒否する', () => {
+  const env = { PATH: '/test tools/bin:/usr/bin', TOKEN: 'fixture-secret-only' };
+  const server = parseCodexMcpGetOutput(JSON.stringify({
+    name: 'fixture', enabled: true,
+    transport: { type: 'stdio', command: 'fixture-mcp', args: [], cwd: '/test tools', env },
+  }));
+  assert.deepEqual(server.env, env);
+  assert.equal(server.cwd, '/test tools');
+  assert.throws(() => parseCodexMcpGetOutput('fixture\n  env: PATH=***** TOKEN=*****\n'),
+    { code: 'CODEX_MCP_CONFIG_INVALID' });
+  assert.throws(() => parseCodexMcpGetOutput('{}'), { code: 'CODEX_MCP_CONFIG_INVALID' });
+});
+
+test('codex investigation: streamable_httpを既存HTTP transportへ渡す', () => {
+  assert.deepEqual(parseCodexMcpGetOutput(JSON.stringify({
+    name: 'fixture', enabled: true,
+    transport: { type: 'streamable_http', url: 'https://example.com/mcp' },
+  })), { name: 'fixture', transport: 'http', url: 'https://example.com/mcp' });
+  assert.equal(parseCodexMcpGetOutput(JSON.stringify({ name: 'disabled', enabled: false })), null);
+});
+
+test('codex investigation: 実行設定をmcp get --jsonから取得する', async () => {
+  const calls = [];
+  const servers = await listCodexMcpServers({
+    projectRoot: '/fixture',
+    execCodexFn: async (command, args, opts) => {
+      calls.push({ command, args, cwd: opts.cwd });
+      return { stdout: args[1] === 'list'
+        ? 'Name Command Args Env Cwd Status Auth\nfixture fixture-mcp - - - enabled Unsupported\n'
+        : JSON.stringify({ name: 'fixture', enabled: true,
+          transport: { type: 'stdio', command: 'fixture-mcp', args: [], env: { PATH: '/fixture/bin' } } }) };
+    },
+  });
+  assert.deepEqual(calls, [
+    { command: 'codex', args: ['mcp', 'list'], cwd: '/fixture' },
+    { command: 'codex', args: ['mcp', 'get', 'fixture', '--json'], cwd: '/fixture' },
+  ]);
+  assert.equal(servers[0].env.PATH, '/fixture/bin');
 });
 
 test('cursor investigate: mcp.json と .cursor/skills・agents だけを読み、skills-cursor は無視する', async () => {

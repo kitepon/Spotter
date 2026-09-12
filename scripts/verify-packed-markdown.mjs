@@ -1,28 +1,21 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { execFileWindowsSafe } from '../src/platform/spawn.mjs';
 import {
   missingPackedMarkdownTargets,
   relativeMarkdownLinkTargets,
 } from './markdown-link-targets.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const packed = spawnSync(
-  npmCommand,
+const packed = await execFileWindowsSafe(
+  'npm',
   ['pack', '--dry-run', '--ignore-scripts', '--json'],
   { cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
 );
-
-if (packed.error) throw packed.error;
-if (packed.status !== 0) {
-  process.stderr.write(packed.stderr || packed.stdout);
-  process.exit(packed.status ?? 1);
-}
 
 let report;
 try {
@@ -30,11 +23,13 @@ try {
 } catch (error) {
   throw new Error(`npm pack --dry-run did not return JSON: ${error.message}`);
 }
-if (!Array.isArray(report) || report.length !== 1 || !Array.isArray(report[0]?.files)) {
+const packageReport = Array.isArray(report) && report.length === 1
+  ? report[0] : report?.['claude-spotter'];
+if (!Array.isArray(packageReport?.files)) {
   throw new Error('npm pack --dry-run returned an unexpected report shape');
 }
 
-const packedPaths = new Set(report[0].files.map(({ path: packedPath }) => packedPath));
+const packedPaths = new Set(packageReport.files.map(({ path: packedPath }) => packedPath));
 const markdownPaths = [...packedPaths].filter((packedPath) => packedPath.endsWith('.md')).sort();
 const failures = [];
 let checkedTargets = 0;

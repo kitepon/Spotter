@@ -3,6 +3,15 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.6.4 — 2026-09-12
+
+- Codex MCPの実行設定を`mcp get --json`から取得する。表示用の伏字でPATHや認証envを
+  上書きし、正常なMCPを起動できなかった問題を修理した。
+- 公開前のMarkdown検査で、npm 12のpackage名をキーとするpack JSONを受理する。
+  従来の単一配列も保持し、不正な形式は検査失敗とする。
+- Windowsの公開前検査は製品共通のnpm起動経路を使い、`.cmd`を直接起動した際の
+  `EINVAL`を解消する。
+
 ## 1.6.3 — 2026-08-30
 
 - **factory adapterの互換判定をSpotter自身へ集約する。** `spotter diagnostics factory`の

@@ -8,7 +8,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFileWindowsSafe } from '../platform/spawn.mjs';
-import { bellVisibleName, listMcpToolsOne, splitArgs } from './investigate-mcp.mjs';
+import { bellVisibleName, listMcpToolsOne } from './investigate-mcp.mjs';
 import { readFrontmatter } from './frontmatter.mjs';
 
 // Windows の .cmd shim 解決と windowsHide 強制は src/platform/spawn.mjs が所有する。
@@ -54,14 +54,14 @@ export async function listCodexMcpToolsAll({ logFn = () => {}, codexBin = 'codex
   return out;
 }
 
-export async function listCodexMcpServers({ codexBin = 'codex', projectRoot } = {}) {
+export async function listCodexMcpServers({ codexBin = 'codex', projectRoot, execCodexFn = execCodex } = {}) {
   const execOpts = { encoding: 'utf8' };
   if (projectRoot) execOpts.cwd = projectRoot;
-  const { stdout } = await execCodex(codexBin, ['mcp', 'list'], execOpts);
+  const { stdout } = await execCodexFn(codexBin, ['mcp', 'list'], execOpts);
   const names = parseCodexMcpListOutput(stdout);
   const servers = [];
   for (const name of names) {
-    const { stdout: detail } = await execCodex(codexBin, ['mcp', 'get', name], execOpts);
+    const { stdout: detail } = await execCodexFn(codexBin, ['mcp', 'get', name, '--json'], execOpts);
     const server = parseCodexMcpGetOutput(detail);
     if (server) servers.push(server);
   }
@@ -83,47 +83,35 @@ export function parseCodexMcpListOutput(text) {
 }
 
 export function parseCodexMcpGetOutput(text) {
-  const lines = String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
-  const name = lines[0];
-  if (!name) return null;
-  const fields = new Map();
-  for (const line of lines.slice(1)) {
-    const sep = line.indexOf(':');
-    if (sep <= 0) continue;
-    fields.set(line.slice(0, sep).trim(), line.slice(sep + 1).trim());
-  }
-  if (fields.get('enabled') === 'false') return null;
-  const transport = fields.get('transport');
-  if (transport === 'stdio') {
-    const command = fields.get('command');
-    if (!command || command === '-') return null;
-    const argsRaw = fields.get('args');
+  // 表示形式のenvは伏字を含むため、実行設定には構造化JSONだけを使う。
+  const invalid = () => Object.assign(new Error('Codex MCP設定のJSON形式が不正です'),
+    { code: 'CODEX_MCP_CONFIG_INVALID' });
+  let config;
+  try { config = JSON.parse(text); } catch { throw invalid(); }
+  if (!config || typeof config.name !== 'string' || !config.name) throw invalid();
+  if (config.enabled === false) return null;
+  const { name, transport } = config;
+  if (transport?.type === 'stdio') {
+    const { command, args = [], cwd, env = {} } = transport;
+    if (typeof command !== 'string' || !command || !Array.isArray(args)
+      || !args.every((arg) => typeof arg === 'string')
+      || (cwd != null && typeof cwd !== 'string')
+      || (env != null && (typeof env !== 'object' || Array.isArray(env)
+        || !Object.values(env).every((value) => typeof value === 'string')))) throw invalid();
     return {
       name,
       transport: 'stdio',
       command,
-      args: argsRaw && argsRaw !== '-' ? splitArgs(argsRaw) : [],
-      cwd: fields.get('cwd') && fields.get('cwd') !== '-' ? fields.get('cwd') : undefined,
-      env: parseCodexEnv(fields.get('env')),
+      args,
+      cwd: cwd ?? undefined,
+      env: env ?? {},
     };
   }
-  if (transport === 'http' || transport === 'sse') {
-    const url = fields.get('url');
-    if (!url || url === '-') return null;
-    return { name, transport: transport === 'sse' ? 'sse' : 'http', url };
+  if (transport?.type === 'streamable_http') {
+    if (typeof transport.url !== 'string' || !transport.url) throw invalid();
+    return { name, transport: 'http', url: transport.url };
   }
-  return null;
-}
-
-function parseCodexEnv(raw) {
-  if (!raw || raw === '-') return {};
-  const env = {};
-  for (const item of splitArgs(raw)) {
-    const sep = item.indexOf('=');
-    if (sep <= 0) continue;
-    env[item.slice(0, sep)] = item.slice(sep + 1);
-  }
-  return env;
+  throw invalid();
 }
 
 export async function listCodexSkillsAll({
