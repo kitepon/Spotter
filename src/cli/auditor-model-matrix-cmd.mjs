@@ -6,6 +6,8 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { version } from '../version.mjs';
 import { CODEX_AUDITOR_PROMPT_VERSION, createCodexCliAuditorBackend } from '../core/codex-cli-backend.mjs';
 import { CODEX_AUDITOR_MODEL_POLICY, resolveCodexAuditorModelSelection } from '../core/codex-auditor-model-policy.mjs';
+import { resolveJevApiKey } from '../core/jev-backend.mjs';
+import { AuditorBackendError } from '../core/auditor-error.mjs';
 
 const execFileAsync = promisify(execFile);
 const ALLOWED_PROFILES = ['baseline', 'luna', 'terra', 'terra-medium'];
@@ -17,6 +19,7 @@ export async function runAuditorModelMatrixCommand({
   createBackendFn = createCodexCliAuditorBackend, resolveSelectionFn = resolveCodexAuditorModelSelection,
   getCodexCliVersionFn = getCodexCliVersion, generatedAt = () => new Date().toISOString(), writeOutput = (text) => process.stdout.write(text),
 } = {}) {
+  if (resolveJevApiKey({ env })) throw new AuditorBackendError('E_JEV_PRIORITY', 'Jev設定時は他モデルの比較を実行できません。', { backend: 'jev' });
   const opts = parseArgs(argv);
   const raw = await readFileFn(opts.fixturesPath);
   const fixtureBytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);

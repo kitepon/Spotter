@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolveJevApiKey, JEV_MODEL } from '../core/jev-backend.mjs';
 import { loadDb, globalDbPath, localDbPath } from '../tool-db/loader.mjs';
 import { findSpotterMarker } from '../hooks/lib.mjs';
 import { codexHookDiagnostics } from './codex-hook-cmd.mjs';
@@ -16,6 +17,14 @@ export async function runDoctor() {
   console.log('spotter doctor');
   let warnings = 0;
   let failures = 0;
+
+  try {
+    const configured = Boolean(resolveJevApiKey());
+    mark(true, configured ? `Jev: ${JEV_MODEL}（最優先・認証設定あり、接続未検証）` : 'Jev: 認証未設定');
+  } catch {
+    mark(false, 'Jev', '認証設定を読み取れません (E_JEV_CONFIG)');
+    failures += 1;
+  }
 
   // Node version
   const nodeVersion = process.versions.node;

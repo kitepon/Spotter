@@ -3,6 +3,15 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.7.0 — 2026-09-21
+
+- TypeSafeのJevをprimary auditorへ追加。認証設定があれば旧backendの明示指定より優先し、
+  認証・通信・利用上限・schema・timeout失敗でも他modelを呼ばない。
+- ツールごとのChoice判定を一括送信する。Stopは使用済みtoolを除外する。
+- `TYPESAFE_API_KEY`、`SPOTTER_JEV_ENV_FILE`、`~/.spotter/jev.env`の認証設定に対応。
+  `spotter doctor`へ設定状態を表示し、評価DBへJevの実model名を保存する。
+- Jev選択時のdaemon自動second-passを停止し、旧model比較と旧backend直接生成は明示エラーにする。
+
 ## 1.6.4 — 2026-09-12
 
 - Codex MCPの実行設定を`mcp get --json`から取得する。表示用の伏字でPATHや認証envを

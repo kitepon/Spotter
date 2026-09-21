@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createAuditorBackend } from '../core/auditor-backend.mjs';
+import { resolveJevApiKey } from '../core/jev-backend.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
 import { runAuditorModelMatrixCommand } from './auditor-model-matrix-cmd.mjs';
 
@@ -9,7 +10,7 @@ const AUDITOR_USAGE = `spotter auditor — experimental primary auditor smoke co
 Usage:
   spotter auditor judge --stage user_input|turn_end --input FILE
                         [--project DIR] [--host-agent claude|codex|automation|unknown]
-                        [--backend haiku|codex-cli|codex-sidecar|auto]
+                        [--backend jev|haiku|codex-cli|codex-sidecar|auto]
   spotter auditor matrix --stage user_input|turn_end --input FILE [--project DIR]
   spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra|terra-medium]...
                                [--repeat N] [--project DIR] [--output FILE]
@@ -105,7 +106,10 @@ export async function runAuditorMatrixCommand({
   const payload = JSON.parse(await readFile(opts.inputPath, 'utf8'));
   const auditorInput = toAuditorInput({ stage: opts.stage, payload });
   const matrix = [];
-  for (const row of AUDITOR_MATRIX_ROWS) {
+  const rows = resolveJevApiKey()
+    ? ['claude', 'codex'].map((hostAgent) => ({ id: `${hostAgent}.jev`, hostAgent, backend: 'jev' }))
+    : AUDITOR_MATRIX_ROWS;
+  for (const row of rows) {
     const catalog = await readLocalFn({ projectRoot: opts.projectRoot, hostAgent: row.hostAgent });
     matrix.push(await runAuditorMatrixRow({
       row,

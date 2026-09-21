@@ -1,6 +1,7 @@
 // Public entry for programmatic use (e.g. `import { startDaemon } from 'claude-spotter'`).
 
 export { startDaemon } from './daemon/daemon.mjs';
+export { createJevAuditorBackend, JEV_MODEL } from './core/jev-backend.mjs';
 export {
   sendRequest,
   TransportError,

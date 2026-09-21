@@ -15,7 +15,7 @@
 //     host: "claude" | "codex",
 //     hook: "SessionStart" | "UserPromptSubmit" | "PreToolUse" | "Stop" | "SessionEnd",
 //     status: <hook-specific string>,
-//     backend?: "haiku" | "codex-cli" | "codex-sidecar" | null,
+//     backend?: "jev" | "haiku" | "codex-cli" | "codex-sidecar" | null,
 //     pass?: boolean | null,
 //     missingTools?: string[],
 //     code?: string | null,

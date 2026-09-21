@@ -6,6 +6,8 @@ RAGは取得日付きの外部仕様・実測artifactであり、Spotter現行ru
 
 現状エントリ:
 
+- `typesafe/` — 2026-09-21のJev HTTP API・model仕様とSpotter受入結果
+
 - `sqlite-wal/` — 2026-09-12のSQLite公式busy handler仕様、WAL同時切替の再現と修理
 - `codex-hooks/` — 2026-07-12のraw snapshot、2026-08-05公式再照合、修正前drift、Stop deliveryのCLI/App実測
 - `hook-output-safety/` — Claude / Codexの親コンテキスト境界、自由文を固定助言へ投影する安全契約、2026-07-12の注入事故実測

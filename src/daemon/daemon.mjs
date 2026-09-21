@@ -89,7 +89,7 @@ export async function startDaemon({
   // If a haikuCaller is explicitly injected (test path), default to haiku — the
   // injection itself signals caller intent. Production callers never inject one,
   // so they hit the `auto` branch which runs availability detection. Explicit
-  // SPOTTER_AUDITOR_BACKEND env or auditorBackendName override still wins above.
+  // Jev認証がある時は、注入や旧backendの明示指定にもJevが優先する。
   auditorBackendName = process.env.SPOTTER_AUDITOR_BACKEND || (haikuCaller ? 'haiku' : 'auto'),
   auditorEnv = process.env,
   stopShortFinalMaxChars = resolveStopShortFinalMaxChars(process.env),
@@ -135,7 +135,7 @@ export async function startDaemon({
 
   // v1.4.10: default `auto` triggers availability-based selection — Codex CLI when
   // detected on PATH, Haiku otherwise. `SPOTTER_AUDITOR_BACKEND=haiku` (or any other
-  // explicit backend) still wins. hostAgent is hard-coded to 'claude' because this
+  // explicit backend) wins only without Jev credentials. hostAgent is hard-coded to 'claude' because this
   // daemon process is Claude-only (see readLocal({hostAgent:'claude'}) above and
   // dispatchCodexRiskCheck hostAgent below); without this, `auto` selection would
   // fail with E_BACKEND_HOST_UNKNOWN on Claude Code launches that don't set
@@ -410,6 +410,7 @@ export async function startDaemon({
   }
 
   function maybeDispatchCodexRiskCheck(stage, judgment) {
+    if (auditorBackend.name === 'jev') return;
     if (!codexRiskCheckEnabled) {
       if (judgment.pass === false && judgment.findings.length > 0) {
         logFn(`${stage}: codex_risk_check skipped: disabled`);

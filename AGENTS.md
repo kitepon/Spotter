@@ -34,6 +34,9 @@ Spotter側だけを正本とする。dotagentsは任意の工場統合、host配
 
 ### Claude-firstとhost adapter
 
+Jevの認証設定がある環境のprimary auditorはJevだけを使う。明示された旧backend指定より
+Jevを優先し、認証・通信・schema・timeout失敗でも他modelへ切り替えない。
+
 Claude Code、Bell、Haiku、既存hook workflowを第一級のまま維持する。CodexとCursor対応は
 agent-neutral coreのadapterであり、detector、reporting、stateをhost別に複製しない。
 

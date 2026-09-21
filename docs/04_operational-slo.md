@@ -6,7 +6,7 @@ SLO（Service Level Objective）は「通常運用で、どの程度の速さ・
 
 ## 適用範囲
 
-- production auditor: `gpt-5.6-terra × medium`（policy version 3）
+- production auditor: Jev認証設定時はJev（model正本は`src/core/jev-backend.mjs`）、未設定時は既存backend選択に従う。
 - Codex native `UserPromptSubmit` / `Stop`
 - Claude host の primary auditor（backend 別に集計し、Codex と混ぜない）
 

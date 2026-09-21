@@ -98,8 +98,20 @@ spotter codex-hook install
 
 - **Node.js 22.13 以上**（npmの`engines.node`と同じ）
 - **Claude Code 2.0 以上**
-- **Codex CLI**。Codex native hooks の既定 backend と Claude host の優先 auditor path で使います。自動選択後の runtime failure で Haiku へ fallback しません
-- **Claude Max プラン**は Claude host が Haiku path を選ぶ場合だけ必要です（Codex CLI 不在、または `SPOTTER_AUDITOR_BACKEND=haiku` 明示時）
+- **TypeSafe認証**があればJevを最優先の監査役として使います。他modelへの切替は行いません。
+- **Codex CLI**はCodex native hooks、およびJev未設定時の監査で使います。
+- **Claude Max プラン**はJev未設定でClaude hostがHaikuを選ぶ場合だけ必要です。
+
+### Jevの認証設定
+
+環境変数`TYPESAFE_API_KEY`、または`~/.spotter/jev.env`へ同名のキーを設定します。
+別の既存env fileを読む場合は`SPOTTER_JEV_ENV_FILE`へその絶対パスを指定できます。
+認証fileは所有者だけが読める権限にしてください。`spotter doctor`で設定の有無を確認できます。
+
+認証設定があれば、`SPOTTER_AUDITOR_BACKEND`や`--backend`の旧model指定よりJevを優先します。
+Jevの認証失効・通信失敗・利用上限・不正応答でも他modelを呼びません。明示した認証fileの
+読取失敗やキー欠落は設定エラーになります。設定後、Claudeの既存sessionは再起動してください。
+Codexは次のhookから設定を読みます。評価記録にはJevの実model名が残ります。
 
 ## アーキテクチャ
 

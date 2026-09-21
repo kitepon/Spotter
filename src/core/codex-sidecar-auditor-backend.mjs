@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { toSpotterJudgment } from './judgment.mjs';
+import { assertJevNotConfigured } from './jev-backend.mjs';
 import { filterCatalogMisses } from './auditor-response.mjs';
 import { AuditorBackendError } from './auditor-error.mjs';
 import { buildWindowsCompatibleInvocation } from '../platform/spawn.mjs';
@@ -22,6 +23,7 @@ export function createCodexSidecarAuditorBackend({
   buildInvocationFn = buildWindowsCompatibleInvocation,
   timeoutMs = DEFAULT_CODEX_SIDECAR_AUDITOR_TIMEOUT_MS,
 } = {}) {
+  assertJevNotConfigured(env);
   if (!Array.isArray(catalog)) {
     throw new TypeError('createCodexSidecarAuditorBackend: catalog must be an array');
   }

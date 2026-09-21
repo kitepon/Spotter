@@ -242,7 +242,7 @@ export async function runCodexUserPromptSubmitHook({
     await recordEvaluation({
       auditStatus: 'success',
       backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
-      model: judgment.meta?.modelSelection?.effectiveModel ?? null,
+      model: judgment.meta?.modelSelection?.effectiveModel ?? judgment.meta?.model ?? null,
     });
     return;
   }
@@ -252,7 +252,7 @@ export async function runCodexUserPromptSubmitHook({
     auditStatus: 'success',
     proposedToolIds: toolIds,
     backend: judgment.meta?.backend ?? backend.name ?? 'unknown',
-    model: judgment.meta?.modelSelection?.effectiveModel ?? null,
+    model: judgment.meta?.modelSelection?.effectiveModel ?? judgment.meta?.model ?? null,
   });
   const advice = projectParentAdvice(toolIds);
   if (advice) writeCodexUserPromptContexts({ contexts: [advice], writeOutput });
@@ -710,7 +710,6 @@ async function observeRuntimeFailure(observer, kind) {
 }
 
 function resolveCodexHookAuditorBackend({ env }) {
-  if (!env?.SPOTTER_AUDITOR_BACKEND) return 'codex-cli';
   return selectAuditorBackend({ hostAgent: 'codex', env }).backend;
 }
 

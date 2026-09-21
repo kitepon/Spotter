@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { toSpotterJudgment } from './judgment.mjs';
+import { assertJevNotConfigured } from './jev-backend.mjs';
 import { AuditorBackendError } from './auditor-error.mjs';
 import { filterCatalogMisses, parseAuditorResponse } from './auditor-response.mjs';
 import {
@@ -133,6 +134,7 @@ export function createCodexCliAuditorBackend({
   platform = process.platform,
   terminateChildFn = terminateProcessTree,
 } = {}) {
+  assertJevNotConfigured(env);
   if (!Array.isArray(catalog)) {
     throw new TypeError('createCodexCliAuditorBackend: catalog must be an array');
   }

@@ -109,7 +109,7 @@ current Codex adapter installs user-level `~/.codex/hooks.json` entries for `Ses
 `UserPromptSubmit`, and `Stop`, enables the current Codex CLI `[features].hooks = true`
 (while still recognizing legacy `codex_hooks` diagnostics output), keeps `.spotter/marker.json`
 project gating, exits early on any of those three child-process variables, and selects Codex CLI as the
-default primary auditor backend.
+default primary auditor backend when Jev is not configured.
 Installer-owned command handlers use only the current canonical fields `{type, command, timeout}`.
 `SessionStart` must not use `async:true`: Codex currently skips async command hooks. Upgrade install
 normalizes obsolete installer-owned fields without changing other products' hooks. Diagnostics separates
@@ -125,7 +125,7 @@ description cache at `~/.spotter/tool-db.json`. Codex global cache writes go to
 answer and does not queue model-facing text for a later turn. Findings remain structured Hook events;
 backend failures are reported with an allow-listed fixed `systemMessage`, fixed stderr, and a structured
 Hook event. Neither path may carry auditor prose or provider stdout / stderr into model context.
-Codex hook auditor calls use the production model policy (currently `gpt-5.6-terra × medium`) and a 20s timeout.
+Codex hook auditor calls prefer Jev when configured, otherwise use the Codex production model policy, with a 20s timeout.
 Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
 When a Codex surface has no persisted transcript and sends a missing, `null`, or empty
@@ -369,9 +369,12 @@ improvement evidence and never becomes auditor input. The operational interpreta
 
 Primary auditor backend は `UserPromptSubmit` / `Stop` 相当の主判定を返す経路です。
 この backend は hook hot path 上で `{pass, missing_tools}` または `SpotterJudgment` を返し、
-host-facing projection の入力になります。auto selection では、Claude host は configuration-time に
+host-facing projection の入力になります。Jev認証があればhostと旧backend明示指定にかかわらずJevを選びます。
+認証は`TYPESAFE_API_KEY`、`SPOTTER_JEV_ENV_FILE`指定のenv file、既定`~/.spotter/jev.env`の順に
+解決します。fileのキーは`TYPESAFE_API_KEY`です。既定fileの不在だけを未設定として扱い、指定fileの
+不在・読取失敗・キー欠落は`E_JEV_CONFIG`です。Jev未設定時のauto selectionでは、Claude host は configuration-time に
 Codex CLI が PATH にあれば `codex-cli`、なければ `haiku`、Codex host は `codex-cli` を選ぶ。
-`SPOTTER_AUDITOR_BACKEND` の明示 override は host auto selection より優先する。一度選んだ backend が
+`SPOTTER_AUDITOR_BACKEND` の明示 override はJev未設定時だけhost auto selectionより優先する。一度選んだ backend が
 runtime で失敗しても、別 backend へ silent retry しない。
 
 Second-pass workflow は、主判定で得た `SpotterFinding[]` を別の観点で確認する経路です。
@@ -381,8 +384,16 @@ dispatch も opt-in かつ detached であり、hook response は Codex を待�
 
 `SPOTTER_AUDITOR_BACKEND_POLICY=current|next` は互換のため受理するが、v1.4.10 以降 selection には
 影響しない。`SPOTTER_AUDITOR_BACKEND=haiku|codex-cli|codex-sidecar` の明示 override は auto selection
-より優先する。unavailable / timeout / schema invalid / non-zero exit は `AuditorBackendError` として
+より優先するのはJev未設定時だけである。unavailable / timeout / schema invalid / non-zero exit は `AuditorBackendError` として
 表面化する。
+
+Jevのmodel正本は`src/core/jev-backend.mjs`の`JEV_MODEL`。候補ごとのChoice判定を1 HTTP requestへ
+まとめ、候補のcatalog IDから共通judgmentを作る。UserPromptSubmitは現在のrequestだけ、Stopは
+final responseを入力にし、使用済みtoolを候補から除外する。自由文は生成させない。
+Jevの失敗は固定codeで通知し、provider本文・キーを反射しない。再試行・別modelへの切替はしない。
+Jev選択時はdaemonの自動second-passも実行しない。旧model専用の`auditor model-matrix`は
+`E_JEV_PRIORITY`で停止する。明示second-pass CLIは主判定とは別のworkflowである。
+評価storeには`backend=jev`と応答の実model名を保存する。
 
 Codex CLI auditor の production selection は
 [`codex-auditor-model-policy.mjs`](../src/core/codex-auditor-model-policy.mjs) の versioned policy が正本。

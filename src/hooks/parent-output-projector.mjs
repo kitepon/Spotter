@@ -4,6 +4,9 @@ const MAX_TOOL_IDS = 5;
 const MAX_ADVICE_LENGTH = 2000;
 
 const FAILURE_KINDS = new Map([
+  ['E_JEV_AUTH', 'auth'],
+  ['E_JEV_USAGE_LIMIT', 'usage_limit'],
+  ['E_JEV_TIMEOUT', 'timeout'],
   ['E_CODEX_CLI_AUTH', 'auth'],
   ['E_CODEX_CLI_USAGE_LIMIT', 'usage_limit'],
   ['E_CODEX_CLI_MODEL_UNAVAILABLE', 'model_unavailable'],

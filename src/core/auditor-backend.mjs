@@ -13,6 +13,7 @@ import { detectHostAgent } from './host-agent.mjs';
 import { createCodexCliAuditorBackend } from './codex-cli-backend.mjs';
 import { createCodexSidecarAuditorBackend } from './codex-sidecar-auditor-backend.mjs';
 import { isCodexCliAvailable as defaultIsCodexCliAvailable } from './codex-cli-availability.mjs';
+import { createJevAuditorBackend, resolveJevApiKey, jevSelection, assertJevNotConfigured } from './jev-backend.mjs';
 
 export { AuditorBackendError } from './auditor-error.mjs';
 export {
@@ -21,7 +22,7 @@ export {
   filterCatalogMisses,
 } from './auditor-response.mjs';
 
-const AUDITOR_BACKENDS = new Set(['haiku', 'codex-cli', 'codex-sidecar', 'auto']);
+const AUDITOR_BACKENDS = new Set(['jev', 'haiku', 'codex-cli', 'codex-sidecar', 'auto']);
 const AUDITOR_POLICIES = new Set(['current', 'next']);
 export const DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS = 45_000;
 
@@ -35,7 +36,13 @@ export function createAuditorBackend({
   haikuCaller = null,
   timeoutMs = DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS,
   isCodexCliAvailable = defaultIsCodexCliAvailable,
+  fetchFn = fetch,
 } = {}) {
+  const jevKey = resolveJevApiKey({ env });
+  if (jevKey || backend === 'jev') {
+    logger('auditor backend selected: backend=jev');
+    return createJevAuditorBackend({ catalog, env, timeoutMs, fetchFn, apiKey: jevKey });
+  }
   const selected = backend === 'auto'
     ? selectAuditorBackend({
         hostAgent,
@@ -45,8 +52,11 @@ export function createAuditorBackend({
       })
     : { backend, mode: backend, compatibility: backend === 'haiku' ? 'current_haiku' : 'none', reason: 'explicit_backend' };
   logger(`auditor backend selected: backend=${selected.backend} reason=${selected.reason}`);
+  if (selected.backend === 'jev') {
+    return createJevAuditorBackend({ catalog, env, timeoutMs, fetchFn, apiKey: jevKey });
+  }
   if (selected.backend === 'haiku') {
-    return createHaikuAuditorBackend({ catalog, logger, haikuCaller, timeoutMs });
+    return createHaikuAuditorBackend({ catalog, logger, haikuCaller, timeoutMs, env });
   }
   if (selected.backend === 'codex-sidecar') {
     return createCodexSidecarAuditorBackend({
@@ -70,11 +80,13 @@ export function createAuditorBackend({
 }
 
 export function createHaikuAuditorBackend({
+  env = process.env,
   catalog = [],
   logger = () => {},
   haikuCaller = null,
   timeoutMs = DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS,
 } = {}) {
+  assertJevNotConfigured(env);
   if (!Array.isArray(catalog)) {
     throw new TypeError('createHaikuAuditorBackend: catalog must be an array');
   }
@@ -148,6 +160,8 @@ export function selectAuditorBackend({
   const effectiveHost = hostAgent ?? detectHostAgent({ env });
   validateStage(stage);
 
+  if (resolveJevApiKey({ env })) return jevSelection();
+
   if (explicit !== undefined && explicit !== '') {
     assertAuditorBackend(explicit);
     if (explicit === 'auto') {
@@ -169,7 +183,7 @@ export function selectAuditorBackend({
 // to be installed). The `SPOTTER_AUDITOR_BACKEND_POLICY` env var (`current` / `next`)
 // is accepted for back-compat but no longer changes behavior — selection is now
 // availability-based on both hosts. `SPOTTER_AUDITOR_BACKEND=haiku` (or any explicit
-// backend name) still wins above this function via the explicit branch.
+// backend name) wins only without Jev credentials, before this function.
 //
 // Detection is configuration-time (synchronous PATH walk via `isCodexCliAvailable`,
 // no spawn, no network). Once a backend is chosen, runtime failures throw

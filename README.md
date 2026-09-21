@@ -99,8 +99,16 @@ spotter codex-hook install
 
 - **Node.js 22.13+**
 - **Claude Code 2.0+**
-- **Codex CLI** for the default Codex-native backend and the preferred Claude-host auditor path. The auto-selected Codex backend does not fall back to Haiku after a runtime failure
-- **Claude Max plan** only when a Claude host selects the Haiku path (Codex CLI is absent or `SPOTTER_AUDITOR_BACKEND=haiku` is explicit)
+- **TypeSafe認証**があればJevを最優先の監査役として使い、他modelを呼びません。
+- **Codex CLI**はCodex native hooks、およびJev未設定時の監査で使用します。
+- **Claude Max plan**はJev未設定でClaude hostがHaikuを選ぶ場合だけ必要です。
+
+### Jevの設定
+
+`TYPESAFE_API_KEY`を環境変数または所有者だけが読める`~/.spotter/jev.env`に設定します。
+`SPOTTER_JEV_ENV_FILE`で既存env fileの絶対パスも指定できます。`spotter doctor`で設定を確認します。
+Jevは旧backendの明示指定にも優先し、失敗時も他modelへ切り替えません。
+Claudeの既存sessionは設定後に再起動し、Codexは次のhookから設定を読みます。
 
 ## Architecture
 
