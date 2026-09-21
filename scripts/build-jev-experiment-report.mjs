@@ -17,7 +17,7 @@ const report = {
   schema: 'spotter.selection-experiment.v1', status: 'complete', completedAt: new Date().toISOString(), model: selection.model,
   baselineCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   candidateSourceSha256: digest(sourceFile),
-  decision: '候補方式は採用しない。確率の足切りと再比較は改善せず、短い質問＋Noulは制御ケースを改善したが、独立確認で重複提案が残った。現行の判定を維持する。',
+  decision: '測定結果は以下を参照。採用判断は期待外提案の内容・取りこぼし・処理量を併せて行う。',
   scope: '固定した日本語ケースの判定実験。親AIの行動改善・実運用の有用性・公式Hermes例との優劣は測っていない。入力tokenは処理量であり請求額ではない。',
   threshold: selection.threshold, thresholdScores: selection.thresholdScores,
   groups: [

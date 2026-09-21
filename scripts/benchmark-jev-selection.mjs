@@ -64,7 +64,7 @@ for (let round = 0; round < repeat; round++) {
     const judgment = await backend.judge(item.input);
     const candidates = fixtures.catalog.filter(tool => !(item.input.usedTools ?? []).includes(tool.name));
     const probabilities = Object.fromEntries(candidates.map((tool, i) => {
-      const value = raw.answers[`tool_${i}`].probabilities?.propose;
+      const value = raw.answers[`tool_${i}`].noul;
       if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error('提案確率が不正です');
       return [tool.name, value];
     }));

@@ -24,7 +24,7 @@ try {
           return response;
         } }).judge(item.input);
         selected = judgment.findings.map(f => f.toolName);
-        probabilities = Object.fromEntries(candidates.map((tool, i) => [tool.name, raw.answers[`tool_${i}`].probabilities.propose]));
+        probabilities = Object.fromEntries(candidates.map((tool, i) => [tool.name, raw.answers[`tool_${i}`].noul]));
         durationMs = judgment.meta.durationMs;
         usage = judgment.meta.diagnostics.tokenUsage;
       } else {

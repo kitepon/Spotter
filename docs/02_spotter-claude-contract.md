@@ -396,8 +396,10 @@ dispatch も opt-in かつ detached であり、hook response は Codex を待�
 より優先するのはJev未設定時だけである。unavailable / timeout / schema invalid / non-zero exit は `AuditorBackendError` として
 表面化する。
 
-Jevのmodel正本は`src/core/jev-backend.mjs`の`JEV_MODEL`。候補ごとのChoice判定を1 HTTP requestへ
-まとめ、候補のcatalog IDから共通judgmentを作る。UserPromptSubmitは現在のrequestだけ、Stopは
+Jevのmodel正本は`src/core/jev-backend.mjs`の`JEV_MODEL`。短い質問による候補ごとのNoul判定を1 HTTP requestへ
+まとめ、肯定確率が0.5を超えた候補のcatalog IDから共通judgmentを作る。確率は有限な0〜1だけを受理する。
+提案の採用・実行は親AIが判断する。同機能ツールの重複だけを理由に候補を抑制しない。
+UserPromptSubmitは現在のrequestだけ、Stopは
 final responseを入力にし、使用済みtoolを候補から除外する。自由文は生成させない。
 Jevの失敗は固定codeで通知し、provider本文・キーを反射しない。再試行・別modelへの切替はしない。
 Jev選択時はdaemonの自動second-passも実行しない。旧model専用の`auditor model-matrix`は

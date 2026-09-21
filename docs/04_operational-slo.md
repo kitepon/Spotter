@@ -32,10 +32,16 @@ fail-loudに通知し、別modelへ自動fallbackしない。
 versioned fixtureをrepeat=3で2回実行し、次をすべて満たすこと。
 
 - schema成功率 100%
-- exact match 100%、false positive / false negative ともに0
+- Jev以外はexact match 100%、false positive / false negative ともに0
 - timeout 0%
 - p95 10秒以下
 - effective model / effort / policy version が期待値と一致
+
+2026-09-21のowner裁定により、Jevの品質は取りこぼし・期待外提案の具体的内容と
+処理量を併せて判定する。同機能の候補を複数提示する誤りは、採用・実行を親AIが
+選別できるため許容する。期待外の件数だけで改善を不採用にせず、無関係な作業への
+誘導と補助操作・重複提案を区別する。固定ケースの完全一致100%は要求しない。
+schema・timeout・p95の基準は維持する。公開前の全判定はdashboardで閲覧できる形で残す。
 
 v1.5.7以降のprompt変更smokeは、標準ツールで十分な入力をpassする負例と、
 カタログツールの具体的な追加機能が直接必要な正例を実カタログで両方確認する。

@@ -7,7 +7,7 @@ RAGは取得日付きの外部仕様・実測artifactであり、Spotter現行ru
 現状エントリ:
 
 - `typesafe/` — 2026-09-21のJev HTTP API・model仕様とSpotter受入結果
-- `typesafe/selection-comparison.md` — 2026-09-21の確率・候補再比較・Choice/Noul比較と採用見送りの実測
+- `typesafe/selection-comparison.md` — 2026-09-21の確率・候補再比較・Choice/Noul比較と採用判断の更新
 
 - `sqlite-wal/` — 2026-09-12のSQLite公式busy handler仕様、WAL同時切替の再現と修理
 - `codex-hooks/` — 2026-07-12のraw snapshot、2026-08-05公式再照合、修正前drift、Stop deliveryのCLI/App実測

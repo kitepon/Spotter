@@ -1,4 +1,4 @@
-// 比較専用。採用前の質問を製品backendへ接続しない。
+// 比較時の質問を固定保存する。製品backendとの一致はfocused testで確認する。
 export function compactQuestions(candidates, stage, kind) {
   return Object.fromEntries(candidates.map((tool, i) => [`tool_${i}`, {
     type: kind,

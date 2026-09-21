@@ -39,13 +39,14 @@ export function summarizeExperiment(rows) {
   });
 }
 
-const LABELS = { baseline: '現行Choice', thresholded: '確率で足切り', verified: '現行＋候補再比較', 'compact-choice': '短い質問＋Choice', 'compact-noul': '短い質問＋Noul' };
+const LABELS = { baseline: '測定時の基準判定', thresholded: '確率で足切り', verified: '基準判定＋候補再比較', 'compact-choice': '短い質問＋Choice', 'compact-noul': '短い質問＋Noul' };
 const list = names => names.length ? names.join('、') : 'なし';
 
 export function renderExperiments({ deviceId, reports = loadExperimentReports() }) {
   const body = reports.map(({ title, report }) => `<article><h1>${escape(title)}</h1>
     <p class="status">状態: ${report.status === 'complete' ? '測定完了' : '測定失敗'} · ${escape(report.completedAt)} · ${escape(report.model)}</p>
     <p class="decision">${escape(report.decision)}</p><p>${escape(report.scope)}</p>
+    ${report.decisionUpdate ? `<p class="decision">採用判断の更新: ${escape(report.decisionUpdate)}</p>` : ''}
     <p>基準commit: <code>${escape(report.baselineCommit)}</code> · 判定値は確率であり、正しさの保証ではありません。</p>
     <p><a href="https://docs.typesafe.ai/cookbooks/skill_suggestion">参考: TypeSafe公式 Skill suggestion</a>。この実験は公式例の再現ではなく、Spotter用の候補方式との比較です。</p>
     ${report.groups.map(group => `<section><h2>${escape(group.title)}</h2><p>${escape(group.note)}</p>

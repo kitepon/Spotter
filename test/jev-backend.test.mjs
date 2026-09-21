@@ -12,6 +12,7 @@ import { createHaikuAuditorBackend } from '../src/core/auditor-backend.mjs';
 import { runAuditorModelMatrixCommand } from '../src/cli/auditor-model-matrix-cmd.mjs';
 import { runCodexUserPromptSubmitHook } from '../src/cli/codex-hook-cmd.mjs';
 import { createEvaluationStore } from '../src/core/evaluation-store.mjs';
+import { compactQuestions } from '../scripts/jev-selection-candidates.mjs';
 
 const env = { TYPESAFE_API_KEY: 'test-secret' };
 const catalog = [{ name: 'caveat', description: '既知の罠を検索する' }, { name: 'calendar', description: '予定を検索する' }];
@@ -22,9 +23,9 @@ test('旧backendの直接生成と旧model比較もJev設定時に他modelを呼
   }
   await assert.rejects(runAuditorModelMatrixCommand({ env }), { code: 'E_JEV_PRIORITY' });
 });
-function reply(choices) {
+function reply(values) {
   return { ok: true, json: async () => ({ model: JEV_MODEL,
-    answers: Object.fromEntries(choices.map((choice, i) => [`tool_${i}`, { type: 'choice', choice }])),
+    answers: Object.fromEntries(values.map((noul, i) => [`tool_${i}`, { type: 'noul', noul }])),
     usage: { input_tokens: 120, output_tokens: 8 },
   }) };
 }
@@ -37,7 +38,7 @@ test('Jev認証があれば全hostと明示backend指定より優先する', asy
       assert.equal(selected.backend, 'jev');
       const auditor = createAuditorBackend({ backend, hostAgent, env, catalog,
         haikuCaller: () => { throw new Error('Haikuを呼んではいけない'); },
-        fetchFn: async () => reply(['propose', 'skip']),
+        fetchFn: async () => reply([0.8, 0.2]),
       });
       assert.equal(auditor.name, 'jev');
       const result = await auditor.judge({ stage: 'user_input', userInput: '罠を探して' });
@@ -55,11 +56,11 @@ test('複数ツールを一括判定し、本文・カタログ以外の履歴�
     const body = JSON.parse(options.body);
     assert.equal(body.state.stage, 'user_input');
     assert.equal(body.state.text, '予定と罠を検索して');
-    assert.equal(body.questions.tool_0.instructions.rules.length, 4);
+    assert.deepEqual(body.questions, compactQuestions(catalog, 'user_input', 'noul'));
     assert.ok(!options.body.includes('送信禁止'));
     assert.equal(Object.keys(body.questions).length, 2);
     assert.equal(options.headers.authorization, 'Bearer test-secret');
-    return reply(['propose', 'propose']);
+    return reply([0.8, 0.9]);
   } });
   const result = await auditor.judge({ stage: 'user_input', userInput: '予定と罠を検索して', observerSnapshot: '送信禁止' });
   assert.equal(calls, 1);
@@ -72,8 +73,8 @@ test('Stopは使用済みツールを除外し、候補ゼロなら外部呼出�
   let calls = 0;
   const auditor = createJevAuditorBackend({ env, catalog, fetchFn: async (_, options) => {
     calls++;
-    assert.equal(Object.keys(JSON.parse(options.body).questions).length, 1);
-    return reply(['propose']);
+    assert.deepEqual(JSON.parse(options.body).questions, compactQuestions([catalog[1]], 'turn_end', 'noul'));
+    return reply([0.8]);
   } });
   const result = await auditor.judge({ stage: 'turn_end', finalResponse: '確認しました', usedTools: ['caveat'] });
   assert.deepEqual(result.findings.map((f) => f.toolName), ['calendar']);
@@ -105,6 +106,17 @@ test('不正な回答・欠落・別モデル応答をpassへ変換しない', a
     { model: JEV_MODEL, answers: { tool_0: { type: 'choice', choice: 'invented' }, tool_1: { type: 'choice', choice: 'skip' } } }]) {
     const auditor = createJevAuditorBackend({ env, catalog, fetchFn: async () => ({ ok: true, json: async () => body }) });
     await assert.rejects(auditor.judge({ stage: 'user_input', userInput: '調査して' }), { code: 'E_JEV_SCHEMA' });
+  }
+});
+
+test('Noulは0.5超だけ提案し、不正な確率をpassへ変換しない', async () => {
+  for (const [value, selected] of [[0, false], [0.49, false], [0.5, false], [0.5001, true], [1, true]]) {
+    const auditor = createJevAuditorBackend({ env, catalog: [catalog[0]], fetchFn: async () => reply([value]) });
+    assert.equal((await auditor.judge({ stage: 'user_input', userInput: '罠を検索して' })).findings.length, selected ? 1 : 0);
+  }
+  for (const value of [null, undefined, '0.9', true, -0.1, 1.1, NaN, Infinity]) {
+    const auditor = createJevAuditorBackend({ env, catalog: [catalog[0]], fetchFn: async () => reply([value]) });
+    await assert.rejects(auditor.judge({ stage: 'user_input', userInput: '罠を検索して' }), { code: 'E_JEV_SCHEMA' });
   }
 });
 
@@ -146,7 +158,7 @@ test('Codex hookの実選択と評価storeにJevのmodelが残る', async () => 
       readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: '既知の罠を検索' }],
       createAuditorBackendFn: (options) => {
         assert.equal(options.backend, 'jev');
-        return createAuditorBackend({ ...options, fetchFn: async () => reply(['propose']) });
+        return createAuditorBackend({ ...options, fetchFn: async () => reply([0.8]) });
       },
       createEvaluationStoreFn: () => createEvaluationStore({ databasePath }),
       loadEvaluationContextFn: async () => ({ status: 'not_requested', snapshot: null }),
