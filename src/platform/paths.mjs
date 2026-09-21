@@ -2,6 +2,12 @@
 
 import { statSync } from 'node:fs';
 import { posix, win32 } from 'node:path';
+import { tmpdir } from 'node:os';
+
+// Unix socketを使う隔離環境は、macOSの長いTMPDIRによるパス上限超過を避ける。
+export function shortTemporaryRoot() {
+  return process.platform === 'win32' ? tmpdir() : '/tmp';
+}
 
 // Synchronous PATH walk: is `command` reachable as an executable file on PATH?
 // No subprocess is spawned. Windows adds PATHEXT-equivalent extensions and reads

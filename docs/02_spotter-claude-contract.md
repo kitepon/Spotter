@@ -11,6 +11,10 @@ dashboardの`GET /devices/<id>/experiments/`は、package同梱の比較結果�
 対応試験は`test/dashboard-experiments.test.mjs`。運用詳細は
 [`11_dashboard-operations.md`](11_dashboard-operations.md)を参照する。
 
+`npm test`は短い一時ホームでNodeのtest runnerを実行する。実ユーザーのJev認証変数を
+子processから除き、HOME / USERPROFILEを同じ一時ホームへ向ける。テスト中のfixture認証は利用できる。
+`npm test -- test/<file>.test.mjs`で同じ隔離条件のfocused testを実行する。
+
 正本は `AGENTS.md`。`CLAUDE.md`は`@AGENTS.md`だけを読むimport入口。ここは実装時に参照する
 checklist と test 対応表。
 

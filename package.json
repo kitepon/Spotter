@@ -10,7 +10,7 @@
     ".": "./src/index.mjs"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node scripts/run-tests.mjs",
     "verify:docs": "node scripts/verify-docs.mjs && node scripts/verify-packed-markdown.mjs && node --test test/ci-contract.test.mjs test/markdown-link-targets.test.mjs",
     "verify:release-commit": "node scripts/verify-release-commit.mjs",
     "prepublishOnly": "npm run verify:docs && npm run verify:release-commit && npm test",
