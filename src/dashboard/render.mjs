@@ -60,6 +60,7 @@ export function renderDashboard({
     <h1>${escapeHtml(title)}</h1>
     ${selectedDevice ? `<p class="subtitle">端末: ${escapeHtml(selectedDevice.name ?? selectedDevice.id)} · <a class="device-picker-link" href="/">端末を選び直す</a></p>` : '<p class="subtitle">端末を選択してください。</p>'}
   </header>
+  ${selectedDevice ? `<p><a href="/devices/${encodeURIComponent(selectedId)}/experiments/">判定方式の比較実験</a></p>` : ''}
   ${renderDevices(devices, selectedId)}
   ${selectedDevice ? renderDeviceContent({ overview: dashboardModel, cases: renderedCases, caseDetail, filters, action }) : ''}
 </main>

@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { createEvaluationStore, defaultEvaluationStorePath } from '../core/evaluation-store.mjs';
 import { buildDashboardModel } from './model.mjs';
 import { renderDeviceDashboard } from './render.mjs';
+import { renderExperiments } from './experiments.mjs';
 
 const FILTER_NAMES = new Set(['project', 'from', 'to']);
 
@@ -49,6 +50,12 @@ function handleRequest({ request, response, deviceId, deviceName, databasePath, 
   if (url.pathname === '/_spotter/health') {
     if (url.search !== '') throw badRequest('health endpoint does not accept query parameters');
     sendJson(response, 200, { ok: true, deviceId });
+    return;
+  }
+
+  if (url.pathname === `/devices/${encodeURIComponent(deviceId)}/experiments/`) {
+    if (url.search !== '') throw badRequest('experiments endpoint does not accept query parameters');
+    sendHtml(response, 200, renderExperiments({ deviceId }));
     return;
   }
 

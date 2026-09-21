@@ -6,6 +6,11 @@
 実挙動の権威は`bin/spotter.mjs`、`src/cli/`、`src/hooks/`、`src/daemon/`、
 `src/core/`と対応testである。
 
+dashboardの`GET /devices/<id>/experiments/`は、package同梱の比較結果を目録駆動で表示する。
+運用DBは開かず、全ケースの入力・期待値・結果と集計を同じページに載せる。
+対応試験は`test/dashboard-experiments.test.mjs`。運用詳細は
+[`11_dashboard-operations.md`](11_dashboard-operations.md)を参照する。
+
 正本は `AGENTS.md`。`CLAUDE.md`は`@AGENTS.md`だけを読むimport入口。ここは実装時に参照する
 checklist と test 対応表。
 

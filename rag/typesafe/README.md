@@ -12,3 +12,6 @@
 
 実測: [v1.7.0受入](../../docs/evidence/jev-v1.7.0.md)。現行実装の正本は
 `src/core/jev-backend.mjs`と[製品契約](../../docs/02_spotter-claude-contract.md)。
+
+2026-09-21の[選別方式比較](selection-comparison.md)は公式Skill suggestionを参考にした
+独自案の実API測定。公式Cookbookのrawは`raw/skill-suggestion-2026-09-21.md`に保存。

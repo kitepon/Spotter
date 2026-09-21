@@ -3,6 +3,14 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.7.1 — 2026-09-21
+
+- dashboardの端末画面からJev判定方式の比較実験を閲覧できるようにした。
+  完全一致、期待外・欠落の件数、token、時間、入力と全判定を掲載する。
+- 確率足切り、候補再比較、短い質問によるChoice／Noulを固定ケースと実catalogで比較。
+  採用条件を満たさなかったため、productionの判定方式は1.7.0を維持する。
+- 比較成果物の目録と描画schemaを公開前テストで検査する。
+
 ## 1.7.0 — 2026-09-21
 
 - TypeSafeのJevをprimary auditorへ追加。認証設定があれば旧backendの明示指定より優先し、

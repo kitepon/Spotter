@@ -132,6 +132,13 @@ v1.5.11のFOX Windows native実測は
 
 ## 公開経路
 
+各端末の運用画面にある「判定方式の比較実験」から
+`/devices/<device-id>/experiments/`を開ける。ここはpackage同梱の時点証拠を表示する。
+運用DBの採用率と、固定ケースでの判定試験を混ぜない。
+比較結果は`src/dashboard/experiments/index.json`の目録から読み、入力・期待値・全判定を表示する。
+目録未掲載や未対応schemaは`E_EXPERIMENT_SCHEMA`となり、公開前テストも失敗する。
+閲覧時の読込み失敗はHTTP 500とdevice serverのエラーログに残る。
+
 Caddyへ次を追加する。`spotter.kitepon.dev`はcase詳細に会話文脈を含むため、Cloudflare側では
 同hostname全体をAccess applicationの対象にし、owner emailだけをallowする。
 
