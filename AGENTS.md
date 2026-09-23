@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Spotterで働く全AIエージェント共通のプロジェクト正典。`CLAUDE.md`は`@AGENTS.md`だけを読む
+Spotterで働く全AIエージェント共通のプロジェクト正典。
 import入口である。
 
 ## 製品の役割と自律所有

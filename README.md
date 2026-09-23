@@ -350,7 +350,7 @@ the production values for controlled experiments; diagnostics mark overrides as 
 - **Current design** (catalog, discovery, classification axes): [docs/01_catalog-design.md](https://github.com/kitepon/Spotter/blob/main/docs/01_catalog-design.md) — source of truth from v1.0.0
 - **Open issues + unverified concerns**: [docs/open-issues.md](https://github.com/kitepon/Spotter/blob/main/docs/open-issues.md) — read this before starting new work
 - **Runtime contract**: [docs/02_spotter-claude-contract.md](https://github.com/kitepon/Spotter/blob/main/docs/02_spotter-claude-contract.md) — Claude hook / daemon / Haiku contract plus Codex native hook policy
-- **Implementation invariants (§0)**: [AGENTS.md](https://github.com/kitepon/Spotter/blob/main/AGENTS.md) — no fallbacks, no silent failures, no provisional code (`CLAUDE.md` is only its import entry)
+- **Implementation invariants (§0)**: [AGENTS.md](https://github.com/kitepon/Spotter/blob/main/AGENTS.md) — no fallbacks, no silent failures, no provisional code
 - **Archived plans and history**: [docs/archive/](https://github.com/kitepon/Spotter/tree/main/docs/archive) — completed Codex rollout plans, primary backend smoke logs, and the frozen v0.1 design discussion
 
 ## Known limitations
