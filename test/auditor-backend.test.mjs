@@ -163,9 +163,9 @@ test('selectAuditorBackend: auto on unknown host requires explicit backend', () 
   );
 });
 
-test('createAuditorBackend: codex-sidecar returns the sidecar auditor backend', () => {
-  const backend = createAuditorBackend({ backend: 'codex-sidecar', catalog, projectRoot: '/repo' });
-  assert.equal(backend.name, 'codex-sidecar');
+test('createAuditorBackend: 退役済みbackendは拒否する', () => {
+  assert.throws(() => createAuditorBackend({ backend: 'codex-sidecar', catalog, projectRoot: '/repo' }),
+    (error) => error instanceof AuditorBackendError && error.code === 'E_BACKEND_UNKNOWN');
 });
 
 test('createAuditorBackend: auto + Claude host + codex on PATH yields codex-cli backend', () => {

@@ -123,21 +123,16 @@ test('runAuditorMatrixCommand: evaluates the four host/backend rows with one fix
     const parsed = JSON.parse(out.join(''));
     assert.deepEqual(rows, [
       'claude.codex-cli',
-      'claude.codex-sidecar',
       'codex.codex-cli',
-      'codex.codex-sidecar',
     ]);
-    assert.deepEqual(catalogHosts, ['claude', 'claude', 'codex', 'codex']);
+    assert.deepEqual(catalogHosts, ['claude', 'codex']);
     assert.equal(parsed.fixture.stage, 'user_input');
-    assert.equal(parsed.summary.total, 4);
-    assert.equal(parsed.summary.success, 4);
+    assert.equal(parsed.summary.total, 2);
+    assert.equal(parsed.summary.success, 2);
     assert.equal(parsed.summary.error, 0);
-    assert.equal(parsed.summary.sidecarPrimaryAuditorImplemented, true);
     assert.deepEqual(parsed.matrix.map((row) => row.id), [
       'claude.codex-cli',
-      'claude.codex-sidecar',
       'codex.codex-cli',
-      'codex.codex-sidecar',
     ]);
     assert.equal(parsed.matrix[0].metrics.schemaSuccess, true);
     assert.equal(parsed.matrix[0].metrics.processCount, 1);
@@ -146,7 +141,7 @@ test('runAuditorMatrixCommand: evaluates the four host/backend rows with one fix
     assert.equal(parsed.matrix[0].meta.diagnostics.stdoutBytes, 10);
     assert.equal(parsed.matrix[0].meta.diagnostics.stderrBytes, 10);
     assert.equal(parsed.matrix[1].status, 'success');
-    assert.equal(parsed.matrix[1].meta.backend, 'codex-sidecar');
+    assert.equal(parsed.matrix[1].meta.backend, 'codex-cli');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -24,9 +24,7 @@ test('cli: --help prints public and internal command contract', async () => {
   assert.ok(stdout.includes('spotter diagnostics factory'));
   assert.ok(stdout.includes('spotter diagnostics runtime-errors'));
   assert.ok(stdout.includes('[--spotter-version VERSION] [--json]'));
-  assert.ok(stdout.includes('spotter codex risk-check --findings FILE'));
-  assert.ok(stdout.includes('spotter codex review|explore|opinion --findings FILE'));
-  assert.ok(stdout.includes('spotter codex work --findings FILE --approve-work --allowed-path PATH'));
+  assert.ok(!stdout.includes('spotter codex risk-check'));
   assert.ok(stdout.includes('spotter cursor-hook install|uninstall|diagnostics'));
   assert.ok(stdout.includes('spotter auditor judge --stage STAGE --input FILE'));
   assert.ok(stdout.includes('spotter auditor matrix --stage STAGE --input FILE'));
@@ -60,12 +58,12 @@ test('cli: --version prints package version', async () => {
   assert.equal(stdout, `spotter ${pkg.version}\n`);
 });
 
-test('cli: codex subcommand help exits successfully', async () => {
-  const { stdout, stderr } = await execFileAsync(process.execPath, [BIN, 'codex', 'risk-check', '--help'], CLI_OPTIONS);
-  assert.equal(stderr, '');
-  assert.ok(stdout.includes('spotter codex — Codex sidecar workflows'));
-  assert.ok(stdout.includes('spotter codex risk-check --findings FILE'));
-  assert.ok(stdout.includes('spotter codex work --findings FILE'));
+test('cli: 退役したsidecarコマンドは実行できない', async () => {
+  await assert.rejects(execFileAsync(process.execPath, [BIN, 'codex', 'risk-check', '--help'], CLI_OPTIONS), (error) => {
+    assert.equal(error.code, 2);
+    assert.match(error.stderr, /unknown command: codex/u);
+    return true;
+  });
 });
 
 test('cli: auditor subcommand help exits successfully', async () => {

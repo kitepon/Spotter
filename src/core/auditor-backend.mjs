@@ -11,7 +11,6 @@ import { filterCatalogMisses } from './auditor-response.mjs';
 import { AuditorBackendError } from './auditor-error.mjs';
 import { detectHostAgent } from './host-agent.mjs';
 import { createCodexCliAuditorBackend } from './codex-cli-backend.mjs';
-import { createCodexSidecarAuditorBackend } from './codex-sidecar-auditor-backend.mjs';
 import { isCodexCliAvailable as defaultIsCodexCliAvailable } from './codex-cli-availability.mjs';
 import { createJevAuditorBackend, resolveJevApiKey, jevSelection, assertJevNotConfigured } from './jev-backend.mjs';
 
@@ -22,7 +21,7 @@ export {
   filterCatalogMisses,
 } from './auditor-response.mjs';
 
-const AUDITOR_BACKENDS = new Set(['jev', 'haiku', 'codex-cli', 'codex-sidecar', 'auto']);
+const AUDITOR_BACKENDS = new Set(['jev', 'haiku', 'codex-cli', 'auto']);
 const AUDITOR_POLICIES = new Set(['current', 'next']);
 export const DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS = 45_000;
 
@@ -57,14 +56,6 @@ export function createAuditorBackend({
   }
   if (selected.backend === 'haiku') {
     return createHaikuAuditorBackend({ catalog, logger, haikuCaller, timeoutMs, env });
-  }
-  if (selected.backend === 'codex-sidecar') {
-    return createCodexSidecarAuditorBackend({
-      catalog,
-      projectRoot,
-      env,
-      timeoutMs,
-    });
   }
   if (selected.backend === 'codex-cli') {
     return createCodexCliAuditorBackend({

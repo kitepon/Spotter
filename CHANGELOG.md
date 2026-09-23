@@ -3,6 +3,10 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.7.3 — 2026-09-24
+
+- 退役するcodex-sidecarの明示CLI、追加監査dispatch、primary auditor backend指定、診断と関連コードを削除する。Jev、Codex CLI、Haikuの主監査は維持する。
+
 ## 1.7.2 — 2026-09-21
 
 - Jevの判定を実験済みの短い質問＋Noulへ変更し、肯定確率0.5超を提案する。

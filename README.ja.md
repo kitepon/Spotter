@@ -245,13 +245,6 @@ spotter dashboard device --id mac --name Mac
                          # この端末の評価DBを127.0.0.1:53940で配信
 spotter dashboard hub --config dashboard-hub.json --host 172.18.0.1
                          # 端末一覧と/devices/<id>/の端末別proxyを配信
-spotter codex risk-check --findings findings.json --host-agent claude
-                         # Spotter finding を codex-sidecar に渡して read-only risk analysis
-spotter codex review|explore|opinion --findings findings.json --host-agent claude
-                         # その他の read-only codex-sidecar second-pass workflow
-spotter codex work --findings findings.json --instruction "docs 更新" --approve-work \
-  --allowed-path docs/ --preserve-worktree
-                         # 承認済み codex-sidecar work を isolated worktree で実行
 spotter codex-hook install
                          # Codex native hooks の修復 / 明示登録 (通常は spotter install が実行)
 spotter codex-hook diagnostics
@@ -283,16 +276,6 @@ retry queueを作らず、その端末だけを切り離せる。
 Windows同梱のTask Scheduler installerはnpm・SSH用の対話ユーザープロファイルを維持しつつ、
 dashboardの2つのPowerShell actionを非対話・console非表示で起動する。
 
-Codex risk dispatch を daemon から非同期に流す場合:
-
-```bash
-SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root ...
-```
-
-有効時は daemon が `pass:false` finding を detached process の
-`spotter codex risk-check` に渡します。hook 応答は Codex を待ちません。
-配線だけ確認する場合は `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` を併用します。
-
 ## 端末内runtime error集計
 
 factory diagnosticsとruntime error集計は既定OFFです。canonicalなdotagents factory reporter設定で
@@ -320,7 +303,6 @@ Codex CLI auditor は versioned product policy を使い、production は反復 
 profile から production へ自動昇格しません。`latest` alias や
 親 Codex の default を暗黙継承せず、失敗時に別 model へ retry しません。制御された実験では
 `SPOTTER_CODEX_CLI_MODEL` / `SPOTTER_CODEX_CLI_REASONING_EFFORT` で上書きでき、diagnostics は unverified と表示します。
-明示 smoke には `SPOTTER_AUDITOR_BACKEND=codex-sidecar` も使えます。
 
 ## 設計ドキュメント
 

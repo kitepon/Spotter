@@ -76,10 +76,6 @@ export async function runDoctor() {
   }
 
   if (projectRoot) {
-    const sidecar = await codexSidecarAuditorReadiness(projectRoot);
-    mark(sidecar.ok, `codex-sidecar auditor: ${sidecar.status}`, sidecar.detail);
-    if (!sidecar.ok) warnings += 1;
-
     const auditorContext = await inspectAuditorContextConfiguration({ projectRoot });
     mark(auditorContext.ok, `evaluation context: ${auditorContext.mode}`, auditorContext.detail);
     if (!auditorContext.ok) warnings += 1;
@@ -229,42 +225,6 @@ async function checkLocalAuditDb({ projectRoot, hostAgent }) {
     };
   } catch (err) {
     return { ok: false, count: 0, path, detail: err.message };
-  }
-}
-
-async function codexSidecarAuditorReadiness(projectRoot) {
-  const args = ['diagnostics', '--project', projectRoot, '--preset', 'auditor', '--json'];
-  const cliPath = process.env.SPOTTER_CODEX_SIDECAR_CLI_PATH;
-  const cmd = cliPath ? process.execPath : 'codex-sidecar';
-  const finalArgs = cliPath ? [cliPath, ...args] : args;
-  try {
-    const invocation = buildWindowsCompatibleInvocation({
-      command: cmd,
-      args: finalArgs,
-      env: process.env,
-      allowCmdFallback: false,
-    });
-    const { stdout } = await execFileP(invocation.command, invocation.args, {
-      timeout: 15_000,
-      windowsHide: true,
-      maxBuffer: 1024 * 1024,
-    });
-    const parsed = JSON.parse(stdout);
-    const ok = parsed?.status === 'ok' && parsed?.normalizedRequest?.workflow === 'auditor';
-    return {
-      ok,
-      status: ok ? 'available' : 'unavailable',
-      detail: ok
-        ? `workflow=${parsed.normalizedRequest.workflow}, reasoning=${parsed.normalizedRequest.modelReasoningEffort ?? 'default'}`
-        : `unexpected diagnostics: status=${parsed?.status ?? 'unknown'}`,
-    };
-  } catch (err) {
-    const stderr = typeof err?.stderr === 'string' && err.stderr.trim() ? ` stderr=${err.stderr.trim().split('\n').slice(-1)[0]}` : '';
-    return {
-      ok: false,
-      status: 'unavailable',
-      detail: `${err.message}${stderr}`,
-    };
   }
 }
 

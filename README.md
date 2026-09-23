@@ -249,13 +249,6 @@ spotter dashboard device --id mac --name Mac
                          # serve this terminal's local evaluation DB on 127.0.0.1:53940
 spotter dashboard hub --config dashboard-hub.json --host 172.18.0.1
                          # list terminals and proxy /devices/<id>/ to their local servers
-spotter codex risk-check --findings findings.json --host-agent claude
-                         # run read-only codex-sidecar risk analysis for Spotter findings
-spotter codex review|explore|opinion --findings findings.json --host-agent claude
-                         # run other read-only codex-sidecar second-pass workflows
-spotter codex work --findings findings.json --instruction "Update docs" --approve-work \
-  --allowed-path docs/ --preserve-worktree
-                         # run approved codex-sidecar work in an isolated worktree
 spotter codex-hook install
                          # repair / explicitly register Codex native hooks (normally handled by spotter install)
 spotter codex-hook diagnostics
@@ -289,16 +282,6 @@ The reference four-terminal service, reverse-tunnel, and Caddy/Cloudflare layout
 [docs/11_dashboard-operations.md](https://github.com/kitepon/Spotter/blob/main/docs/11_dashboard-operations.md).
 On Windows, the bundled Task Scheduler installer keeps the interactive user's profile for npm and
 SSH while starting both dashboard PowerShell actions non-interactively with hidden console windows.
-
-Optional async Codex risk dispatch:
-
-```bash
-SPOTTER_CODEX_RISK_CHECK=1 spotter daemon start --session-id ... --project-root ...
-```
-
-When enabled, the daemon dispatches `pass:false` findings to `spotter codex risk-check`
-in a detached process. Hook responses do not wait for Codex. Add
-`SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` to exercise the wiring without calling Codex.
 
 Primary auditor backend policy: Claude hooks automatically select Codex CLI when it is available on PATH,
 otherwise the Haiku-compatible path. Codex native hooks automatically select Codex CLI. An explicit
@@ -343,7 +326,6 @@ Codex CLI auditor child processes use a versioned product policy. The production
 Spotter does not inherit a `latest` alias or the parent Codex default, and an invocation failure never retries another model.
 `SPOTTER_CODEX_CLI_MODEL` and `SPOTTER_CODEX_CLI_REASONING_EFFORT` can override
 the production values for controlled experiments; diagnostics mark overrides as unverified.
-`SPOTTER_AUDITOR_BACKEND=codex-sidecar` is available for explicit sidecar auditor smoke.
 
 ## Design docs
 

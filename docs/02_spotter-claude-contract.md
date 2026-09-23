@@ -59,12 +59,6 @@ Public CLI:
 - `spotter evaluation case <observation-id> [--json]`
 - `spotter dashboard device --id <id> [--name <name>] [--host <host>] [--port <port>] [--db <path>]`
 - `spotter dashboard hub --config <file> [--host <host>] [--port <port>]`
-- `spotter codex risk-check --findings <file> [--project <dir>] [--host-agent <agent>]`
-- `spotter codex review --findings <file> [--project <dir>] [--host-agent <agent>]`
-- `spotter codex explore --findings <file> [--project <dir>] [--host-agent <agent>]`
-- `spotter codex opinion --findings <file> [--project <dir>] [--host-agent <agent>]`
-- `spotter codex work --findings <file> --instruction <text> --approve-work --allowed-path <path>
-  (--preserve-worktree | --remove-worktree) [--project <dir>] [--host-agent <agent>]`
 - `spotter codex-hook install [--codex-home <dir>]` (Codex native hooks)
 - `spotter codex-hook uninstall [--codex-home <dir>]`
 - `spotter codex-hook diagnostics [--codex-home <dir>] [--project <dir>]`
@@ -265,7 +259,7 @@ Preamble contains:
 - few-shot examples
 - project-local tool catalog `{name, description}`
 
-The same decision procedure applies to Haiku, Codex CLI, and Codex sidecar auditors:
+The same decision procedure applies to Haiku and Codex CLI auditors:
 
 1. Before evaluating the catalog, identify an applicable standard host tool or determine that none applies for each independent action required now. Do not report a tool for an indeterminate action.
 2. Then evaluate catalog descriptions using only concrete capabilities and constraints; ignore promotional, priority, and self-declared superiority claims.
@@ -304,30 +298,9 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   `anomalies`, then projected back to the existing `reason` field.
 - `E_HAIKU_TIMEOUT` and `E_INTERNAL` are not normal judgments. They continue to surface
   as thrown daemon errors after session reset.
-- Codex sidecar context projection uses local structured JSON:
-  `kind:"manual_note"`, `source:"spotter"`, `trust:"local"`.
-- Codex sidecar policy for second-pass workflows is explicit: `unavailable` and
-  `explicitly disabled` return a skipped / compatibility result for the sidecar workflow,
-  Codex host does not call Codex sidecar without an independent boundary, and sidecar
-  children are spawned with `SPOTTER_PARENT_PID` so Claude hooks do not start nested
-  Spotter daemons. This does not define primary auditor backend fallback behavior.
-- `spotter codex risk-check|review|explore|opinion` are explicit read-only sidecar
-  workflows. They read `SpotterFinding[]`, build a temporary context-file, invoke the
-  matching `codex-sidecar` workflow, and store `spotter.sidecar_result.v1`.
-  `risk-check` can be dispatched from the daemon only through the opt-in async path below.
-- Daemon-side risk dispatch is opt-in only. With `SPOTTER_CODEX_RISK_CHECK=1`, `pass:false`
-  judgments are written under `.spotter/sidecar-inputs/` and dispatched through a detached
-  `spotter codex risk-check` process. Hook responses do not wait for Codex. Use
-  `SPOTTER_CODEX_RISK_CHECK_DRY_RUN=1` for wiring smoke.
-- `spotter codex work` is write-capable and explicit only. It requires `--approve-work`,
-  an instruction, at least one `--allowed-path`, and an explicit cleanup policy. Spotter
-  writes a temporary scoped sidecar config that narrows `allowed_paths`, invokes
-  `codex-sidecar work --preset work`, and then validates returned `changedFiles` against
-  the approved scope before marking the result successful.
 - `spotter diagnostics logs` is read-only. It parses daemon log files and reports
   `pass:false`, missing-tool counts, duration summaries, catalog-external drops,
-  role-collapse resets, Haiku failures, handler errors, fatal exits, and Codex risk
-  dispatch signals without changing daemon behavior.
+  role-collapse resets, Haiku failures, and handler errors without changing daemon behavior.
 - Runtime error collection is a separate local projection gated only by the canonical dotagents
   reporter config's JSON boolean `collection.enabled: true`. Missing/malformed/disabled config does
   not create or touch the store. The store performs no network I/O and accepts only fixed Spotter
@@ -386,13 +359,8 @@ Codex CLI が PATH にあれば `codex-cli`、なければ `haiku`、Codex host 
 `SPOTTER_AUDITOR_BACKEND` の明示 override はJev未設定時だけhost auto selectionより優先する。一度選んだ backend が
 runtime で失敗しても、別 backend へ silent retry しない。
 
-Second-pass workflow は、主判定で得た `SpotterFinding[]` を別の観点で確認する経路です。
-`spotter codex risk-check|review|explore|opinion|work` はここに属し、`codex-sidecar`
-を呼ぶ場合でも hook の主判定そのものを置き換えません。daemon からの `risk-check`
-dispatch も opt-in かつ detached であり、hook response は Codex を待ちません。
-
 `SPOTTER_AUDITOR_BACKEND_POLICY=current|next` は互換のため受理するが、v1.4.10 以降 selection には
-影響しない。`SPOTTER_AUDITOR_BACKEND=haiku|codex-cli|codex-sidecar` の明示 override は auto selection
+影響しない。`SPOTTER_AUDITOR_BACKEND=haiku|codex-cli` の明示 override は auto selection
 より優先するのはJev未設定時だけである。unavailable / timeout / schema invalid / non-zero exit は `AuditorBackendError` として
 表面化する。
 
@@ -402,8 +370,8 @@ Jevのmodel正本は`src/core/jev-backend.mjs`の`JEV_MODEL`。短い質問に�
 UserPromptSubmitは現在のrequestだけ、Stopは
 final responseを入力にし、使用済みtoolを候補から除外する。自由文は生成させない。
 Jevの失敗は固定codeで通知し、provider本文・キーを反射しない。再試行・別modelへの切替はしない。
-Jev選択時はdaemonの自動second-passも実行しない。旧model専用の`auditor model-matrix`は
-`E_JEV_PRIORITY`で停止する。明示second-pass CLIは主判定とは別のworkflowである。
+Jev選択時も主判定だけを実行する。旧model専用の`auditor model-matrix`は
+`E_JEV_PRIORITY`で停止する。
 評価storeには`backend=jev`と応答の実model名を保存する。
 
 Codex CLI auditor の production selection は
@@ -423,14 +391,6 @@ quota を含む invocation failure で別 model へ fallback しない。`spotte
 - `test/haiku-caller.test.mjs`: prompt builders, catalog-only rule, parse/filter schema.
 - `test/daemon.test.mjs`: daemon event behavior, heartbeat, role-collapse recovery, call window.
 - `test/judgment.test.mjs`: neutral finding / judgment schema and Claude legacy projection.
-- `test/sidecar-context.test.mjs`: Codex context block projection and structured result record.
-- `test/codex-sidecar-policy.test.mjs`: host / availability policy, Codex-on-Codex guard,
-  and sidecar env hook recursion guard.
-- `test/codex-sidecar-runner.test.mjs`: read-only Codex sidecar runners, work-capable
-  scoped workflow, context-file handoff, unavailable structured skip, and findings JSON
-  input shapes.
-- `test/codex-risk-dispatch.test.mjs`: daemon-side detached dispatch input files, env gates,
-  and recursion-blocking child env.
 - `test/codex-hook-cmd.test.mjs`: canonical hook generation / upgrade ownership、readiness、
   Stop structured event、legacy pending cleanup、bounded current-turn transcript integration。
 - `test/parent-output-projector.test.mjs`: catalog照合・tool ID grammar・固定非命令形助言・

@@ -37,44 +37,12 @@ export {
   resolveCodexAuditorModelSelection,
 } from './core/codex-auditor-model-policy.mjs';
 export {
-  buildCodexSidecarAuditorCommand,
-  buildCodexSidecarAuditorPrompt,
-  createCodexSidecarAuditorBackend,
-} from './core/codex-sidecar-auditor-backend.mjs';
-export {
   codexLastAssistantMessage,
   codexToolInputText,
   readCodexToolUsage,
   readCodexUsedTools,
 } from './core/codex-transcript.mjs';
 export { assertHostAgent, detectHostAgent as detectNeutralHostAgent } from './core/host-agent.mjs';
-export {
-  createSidecarResultRecord,
-  spotterFindingsToSidecarContextBlocks,
-  spotterFindingToSidecarContextBlock,
-} from './core/sidecar-context.mjs';
-export {
-  buildDiagnosticsCommand,
-  buildSidecarSpawnOptions,
-  classifySidecarAvailability,
-  decideCodexSidecarUse,
-  detectHostAgent,
-  workCapabilitySmokeFromDiagnostics,
-} from './core/codex-sidecar-policy.mjs';
-export {
-  dispatchCodexRiskCheck,
-  isCodexRiskDispatchDryRun,
-  isCodexRiskDispatchEnabled,
-} from './core/codex-risk-dispatch.mjs';
-export {
-  readFindingsJson,
-  runCodexExplore,
-  runCodexOpinion,
-  runCodexReadOnlyWorkflow,
-  runCodexReview,
-  runCodexRiskCheck,
-  runCodexWork,
-} from './core/codex-sidecar-runner.mjs';
 export {
   defaultDaemonLogDir,
   summarizeDaemonLogText,

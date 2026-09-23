@@ -2,8 +2,7 @@
 
 この文書は現行のClaude / Codex auditor pathが共有するカタログ設計を説明する。
 実挙動の権威は`src/tool-db/`と対応testである。
-`UserPromptSubmit` / `Stop` の primary auditor backend を Codex CLI / `codex-sidecar` に
-移す計画は v1.4.3 で Codex host 側が完了済み。現行 backend policy は
+`UserPromptSubmit` / `Stop` のCodex host対応は完了済み。現行 backend policy は
 [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md) を参照し、完了済みの移行ログは
 [`archive/SPOTTER_PRIMARY_BACKEND_TODO.md`](archive/SPOTTER_PRIMARY_BACKEND_TODO.md) に保持する。
 

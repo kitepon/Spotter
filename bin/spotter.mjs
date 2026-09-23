@@ -7,7 +7,6 @@ import { runUninstall } from '../src/cli/uninstall.mjs';
 import { runDoctor } from '../src/cli/doctor.mjs';
 import { runStatus } from '../src/cli/status.mjs';
 import { runDbList, runDbRefresh, runDbRebuild } from '../src/cli/db-cmd.mjs';
-import { runCodexCommand } from '../src/cli/codex-cmd.mjs';
 import { runCodexHookCommand } from '../src/cli/codex-hook-cmd.mjs';
 import { runCursorHookCommand } from '../src/cli/cursor-hook-cmd.mjs';
 import { runAuditorCommand } from '../src/cli/auditor-cmd.mjs';
@@ -62,12 +61,6 @@ Usage:
   spotter dashboard device --id ID [--name NAME] [--host HOST] [--port PORT] [--db PATH]
   spotter dashboard hub --config FILE [--host HOST] [--port PORT]
                                         serve the local device-routed evaluation dashboard
-  spotter codex risk-check --findings FILE
-                                        run read-only codex-sidecar risk analysis
-  spotter codex review|explore|opinion --findings FILE
-                                        run read-only codex-sidecar second-pass workflows
-  spotter codex work --findings FILE --approve-work --allowed-path PATH
-                                        run approved codex-sidecar worktree workflow
   spotter codex-hook install|uninstall|diagnostics
                                         (experimental) manage Codex native hooks
   spotter cursor-hook install|uninstall|diagnostics
@@ -127,9 +120,6 @@ async function main() {
       return;
     case 'doctor':
       await runDoctor();
-      return;
-    case 'codex':
-      await runCodexCommand({ argv: rest });
       return;
     case 'codex-hook':
       await runCodexHookCommand({ argv: rest });

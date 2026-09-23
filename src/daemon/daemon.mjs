@@ -39,11 +39,6 @@ import {
   createAuditorBackend,
   DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS,
 } from '../core/auditor-backend.mjs';
-import {
-  dispatchCodexRiskCheck,
-  isCodexRiskDispatchDryRun,
-  isCodexRiskDispatchEnabled,
-} from '../core/codex-risk-dispatch.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
@@ -83,9 +78,6 @@ export async function startDaemon({
   logFn = () => {},
   haikuCallWindowMs = DEFAULT_HAIKU_CALL_WINDOW_MS,
   heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
-  codexRiskCheckEnabled = isCodexRiskDispatchEnabled(),
-  codexRiskCheckDryRun = isCodexRiskDispatchDryRun(),
-  dispatchCodexRiskCheckFn = dispatchCodexRiskCheck,
   // If a haikuCaller is explicitly injected (test path), default to haiku — the
   // injection itself signals caller intent. Production callers never inject one,
   // so they hit the `auto` branch which runs availability detection. Explicit
@@ -285,7 +277,6 @@ export async function startDaemon({
         result.reason ? `, reason=${result.reason}` : ''
       }`
     );
-    maybeDispatchCodexRiskCheck('user_input', judgment);
     return withEvaluationMeta(result, judgment.meta, auditorBackend.name, spotterVersion);
   }
 
@@ -386,7 +377,6 @@ export async function startDaemon({
         result.reason ? `, reason=${result.reason}` : ''
       }`
     );
-    maybeDispatchCodexRiskCheck('turn_end', judgment);
 
     state.usedTools = [];
     state.lastUserInput = null;
@@ -407,35 +397,6 @@ export async function startDaemon({
     } catch (error) {
       logFn(`evaluation turn closure failed: ${error.message}`);
     }
-  }
-
-  function maybeDispatchCodexRiskCheck(stage, judgment) {
-    if (auditorBackend.name === 'jev') return;
-    if (!codexRiskCheckEnabled) {
-      if (judgment.pass === false && judgment.findings.length > 0) {
-        logFn(`${stage}: codex_risk_check skipped: disabled`);
-      }
-      return;
-    }
-    if (!projectRoot) {
-      logFn(`${stage}: codex_risk_check skipped: no projectRoot`);
-      return;
-    }
-    if (judgment.pass === true || judgment.findings.length === 0) return;
-    dispatchCodexRiskCheckFn({
-      projectRoot,
-      judgment,
-      sessionId,
-      stage,
-      hostAgent: 'claude',
-      dryRun: codexRiskCheckDryRun,
-    }).then((dispatch) => {
-      if (dispatch?.dispatched) {
-        logFn(`${stage}: codex_risk_check dispatched pid=${dispatch.pid ?? 'unknown'} result=${dispatch.resultPath}`);
-      }
-    }).catch((err) => {
-      logFn(`${stage}: codex_risk_check dispatch failed: ${err.message}`);
-    });
   }
 
   const onErrorFn = (err, envelope) => {

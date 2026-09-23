@@ -46,7 +46,6 @@ agent-neutral coreのadapterであり、detector、reporting、stateをhost別�
   業務ロジックへ`process.platform`やhost別分岐を散らさない。
 - Claude、Codex、Cursorのtool DBはhost-localかつ別fileで所有し、一方のrefreshで他方を
   pruneまたはoverwriteしない。global DBはdescription cacheだけで、audit入力へ混ぜない。
-- `codex-sidecar`は明示second-pass workflowであり、primary auditorのhidden fallbackにしない。
 
 ### 再帰安全
 

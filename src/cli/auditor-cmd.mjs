@@ -10,7 +10,7 @@ const AUDITOR_USAGE = `spotter auditor — experimental primary auditor smoke co
 Usage:
   spotter auditor judge --stage user_input|turn_end --input FILE
                         [--project DIR] [--host-agent claude|codex|automation|unknown]
-                        [--backend jev|haiku|codex-cli|codex-sidecar|auto]
+                        [--backend jev|haiku|codex-cli|auto]
   spotter auditor matrix --stage user_input|turn_end --input FILE [--project DIR]
   spotter auditor model-matrix --fixtures FILE [--profile baseline|luna|terra|terra-medium]...
                                [--repeat N] [--project DIR] [--output FILE]
@@ -134,9 +134,7 @@ export async function runAuditorMatrixCommand({
 
 const AUDITOR_MATRIX_ROWS = Object.freeze([
   Object.freeze({ id: 'claude.codex-cli', hostAgent: 'claude', backend: 'codex-cli' }),
-  Object.freeze({ id: 'claude.codex-sidecar', hostAgent: 'claude', backend: 'codex-sidecar' }),
   Object.freeze({ id: 'codex.codex-cli', hostAgent: 'codex', backend: 'codex-cli' }),
-  Object.freeze({ id: 'codex.codex-sidecar', hostAgent: 'codex', backend: 'codex-sidecar' }),
 ]);
 
 async function runAuditorMatrixRow({
@@ -207,15 +205,11 @@ function summarizeMatrix(matrix) {
     total: matrix.length,
     success: matrix.filter((row) => row.status === 'success').length,
     error: matrix.filter((row) => row.status === 'error').length,
-    sidecarPrimaryAuditorImplemented: matrix
-      .filter((row) => row.backend === 'codex-sidecar')
-      .some((row) => row.status === 'success'),
   };
 }
 
 function recursionSafetyFor(backend) {
   if (backend === 'codex-cli') return 'spotter_parent_pid_backend_env';
-  if (backend === 'codex-sidecar') return 'spotter_parent_pid_sidecar_env';
   return 'unknown';
 }
 

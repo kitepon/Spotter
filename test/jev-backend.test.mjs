@@ -7,7 +7,6 @@ import { createAuditorBackend, selectAuditorBackend } from '../src/core/auditor-
 import { createJevAuditorBackend, resolveJevApiKey, JEV_MODEL } from '../src/core/jev-backend.mjs';
 import { projectBackendFailure } from '../src/hooks/parent-output-projector.mjs';
 import { createCodexCliAuditorBackend } from '../src/core/codex-cli-backend.mjs';
-import { createCodexSidecarAuditorBackend } from '../src/core/codex-sidecar-auditor-backend.mjs';
 import { createHaikuAuditorBackend } from '../src/core/auditor-backend.mjs';
 import { runAuditorModelMatrixCommand } from '../src/cli/auditor-model-matrix-cmd.mjs';
 import { runCodexUserPromptSubmitHook } from '../src/cli/codex-hook-cmd.mjs';
@@ -18,7 +17,7 @@ const env = { TYPESAFE_API_KEY: 'test-secret' };
 const catalog = [{ name: 'caveat', description: '既知の罠を検索する' }, { name: 'calendar', description: '予定を検索する' }];
 
 test('旧backendの直接生成と旧model比較もJev設定時に他modelを呼ばない', async () => {
-  for (const create of [createCodexCliAuditorBackend, createCodexSidecarAuditorBackend, createHaikuAuditorBackend]) {
+  for (const create of [createCodexCliAuditorBackend, createHaikuAuditorBackend]) {
     assert.throws(() => create({ env, catalog }), { code: 'E_JEV_PRIORITY' });
   }
   await assert.rejects(runAuditorModelMatrixCommand({ env }), { code: 'E_JEV_PRIORITY' });
@@ -32,7 +31,7 @@ function reply(values) {
 
 test('Jev認証があれば全hostと明示backend指定より優先する', async () => {
   for (const hostAgent of ['claude', 'codex', 'cursor', 'automation', 'unknown']) {
-    for (const backend of ['auto', 'haiku', 'codex-cli', 'codex-sidecar', 'jev']) {
+    for (const backend of ['auto', 'haiku', 'codex-cli', 'jev']) {
       const selected = selectAuditorBackend({ hostAgent, env: { ...env, SPOTTER_AUDITOR_BACKEND: backend },
         isCodexCliAvailable: () => { throw new Error('他モデルを探索してはいけない'); } });
       assert.equal(selected.backend, 'jev');
