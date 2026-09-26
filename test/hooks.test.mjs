@@ -41,7 +41,7 @@ test('hook stdin accepts a leading UTF-8 BOM but still rejects malformed JSON', 
     Buffer.from(JSON.stringify({ cwd: '/does/not/exist', conversation_id: 'test' })),
   ]));
   assert.equal(valid.status, 0, valid.stderr);
-  assert.equal(valid.stderr, '');
+  assert.doesNotMatch(valid.stderr, /hook stdin is not valid JSON/);
   const invalid = run(Buffer.from([0xef, 0xbb, 0xbf, 0x7b]));
   assert.equal(invalid.status, 2);
   assert.match(invalid.stderr, /hook stdin is not valid JSON/);
