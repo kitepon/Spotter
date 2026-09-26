@@ -24,6 +24,28 @@ const formatTransparentContext = (entries) => projectParentAdvice(entries.map((e
 const formatTransparentBlockReason = formatTransparentContext;
 const formatSpotterWarning = ({ code }) => projectBackendFailure(code).systemMessage;
 const TEST_EVALUATION_STORE = { recordTurn() {}, close() {} };
+
+test('hook stdin accepts a leading UTF-8 BOM but still rejects malformed JSON', () => {
+  const bin = fileURLToPath(new URL('../bin/spotter.mjs', import.meta.url));
+  const env = { ...process.env };
+  delete env.SPOTTER_PARENT_PID;
+  delete env.SPOTTER_BACKEND;
+  delete env.SPOTTER_CHILD_BACKEND;
+  const run = (input) => spawnSync(process.execPath, [bin, 'cursor-hook', 'session-start'], {
+    input,
+    encoding: 'utf8',
+    env,
+  });
+  const valid = run(Buffer.concat([
+    Buffer.from([0xef, 0xbb, 0xbf]),
+    Buffer.from(JSON.stringify({ cwd: '/does/not/exist', conversation_id: 'test' })),
+  ]));
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.doesNotMatch(valid.stderr, /hook stdin is not valid JSON/);
+  const invalid = run(Buffer.from([0xef, 0xbb, 0xbf, 0x7b]));
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stderr, /hook stdin is not valid JSON/);
+});
 async function runUserPrompt(options = {}) {
   return runUserPromptImpl({
     createEvaluationStoreFn: () => TEST_EVALUATION_STORE,

@@ -104,7 +104,9 @@ export async function readStdinJson() {
     throw err;
   }
   try {
-    return JSON.parse(raw);
+    // Windows Cursor may prefix hook JSON with a UTF-8 BOM. Node decodes it
+    // to U+FEFF, which JSON.parse rejects even though the envelope is valid.
+    return JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
   } catch (cause) {
     const err = new Error(`hook stdin is not valid JSON: ${cause.message}`);
     err.exitCode = 2;
