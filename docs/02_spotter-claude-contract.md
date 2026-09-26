@@ -106,6 +106,8 @@ factory adapter向けの単一判定`compatibility_status`を追加する。値�
 All hooks read one JSON object from stdin unless `isChildCall()` finds a non-empty
 `SPOTTER_PARENT_PID`, `SPOTTER_BACKEND`, or `SPOTTER_CHILD_BACKEND`. Invalid or empty stdin is
 an unexpected hook failure.
+The shared stdin reader accepts one leading UTF-8 BOM, which Windows Cursor can add to hook JSON.
+The JSON object and envelope validation rules remain unchanged.
 
 Codex native hooks use Codex hook payloads, not Claude hook JSON. The
 current Codex adapter installs user-level `~/.codex/hooks.json` entries for `SessionStart`,
@@ -129,6 +131,8 @@ answer and does not queue model-facing text for a later turn. Findings remain st
 backend failures are reported with an allow-listed fixed `systemMessage`, fixed stderr, and a structured
 Hook event. Neither path may carry auditor prose or provider stdout / stderr into model context.
 Codex hook auditor calls prefer Jev when configured, otherwise use the Codex production model policy, with a 20s timeout.
+The read-only Codex auditor uses `--skip-git-repo-check` because an installed Spotter project
+can be a non-Git directory; Codex's workspace trust gate must not prevent that audit.
 Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
 When a Codex surface has no persisted transcript and sends a missing, `null`, or empty

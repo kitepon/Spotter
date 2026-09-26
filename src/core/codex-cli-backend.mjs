@@ -289,6 +289,9 @@ export function buildCodexExecArgs({ schemaPath, lastMessagePath, projectRoot, m
     '--ephemeral',
     '--ignore-user-config',
     '--ignore-rules',
+    // Spotter can be installed in a non-Git project; the auditor is read-only
+    // and must not inherit Codex's interactive workspace trust gate.
+    '--skip-git-repo-check',
     '--sandbox',
     'read-only',
     '--cd',
