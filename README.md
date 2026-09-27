@@ -18,7 +18,7 @@ Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https:/
 ## Ownership boundary
 
 This repository owns the complete Spotter product surface: auditor behavior,
-Claude/Codex hook adapters, project markers, catalog discovery and host-local
+Claude/Codex/Cursor/Grok hook adapters, project markers, catalog discovery and host-local
 tool databases, evaluation storage, dashboard servers, diagnostics, installers,
 and release packaging. [dotagents](https://github.com/kitepon/dotagents)
 owns shared agent instructions and the optional factory-reporter configuration
@@ -91,11 +91,19 @@ Release install smoke:
 
 ```bash
 npm uninstall -g claude-spotter
-npm install -g claude-spotter
+npm install -g claude-spotter@1.8.0
 spotter --version
 spotter install -y
-spotter codex-hook install
 ```
+
+Maintainer release: merge the tested release commit into `main`, then run
+[Publish to npm](https://github.com/kitepon/Spotter/actions/workflows/publish.yml) from `main` with the package version.
+The workflow checks the requested version and the `main` ancestry gate before `npm publish`.
+For the one-time npm setup, open the [package access settings](https://www.npmjs.com/package/claude-spotter/access)
+and add a GitHub Actions trusted publisher: owner `kitepon`, repository `Spotter`,
+workflow filename `publish.yml`, no environment, and allow direct `npm publish`.
+The GitHub-hosted workflow uses OIDC, so later releases need no stored npm token or CLI login.
+After publication, verify the registry version and install that exact version on each target host.
 
 ## Requirements
 
@@ -353,7 +361,7 @@ the production values for controlled experiments; diagnostics mark overrides as 
 - **Failures degrade loudly, never freeze the host** (v1.4.15) — this release stopped backend failure from silently erasing a prompt. Since v1.4.19, the non-blocking behavior remains but the old model-visible warning text is replaced by fixed `systemMessage`, stderr, and structured event diagnostics
 - **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Claude's audit
 - **Per-project / per-host audit isolation** — the daemon audits against the local DB only; global DBs are host-specific description caches. Tools discovered in *other* projects or another host can never bleed into this project's audit set
-- **Zero-touch catalog** — `spotter install` seeds the Claude DB automatically; Claude and Codex SessionStart hooks keep their host-local DBs fresh in the background. You never have to maintain the tool list by hand
+- **Zero-touch catalog** — `spotter install` seeds each available host's DB. Claude, Codex, and Cursor refresh in the background; Grok waits for refresh before its first audit
 - **Codex native hooks** — Codex host uses Codex CLI as the primary auditor backend, keeps a separate `.spotter/tool-db.codex.json`, and surfaces backend failures explicitly instead of falling back to Haiku
 - **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Claude already uses those reliably
 - **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in AGENTS.md](https://github.com/kitepon/Spotter/blob/main/AGENTS.md))

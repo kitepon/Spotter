@@ -18,7 +18,7 @@
 
 ## 所有境界
 
-本repositoryはSpotter製品面の全体、すなわち監査挙動、Claude/Codex hook adapter、
+本repositoryはSpotter製品面の全体、すなわち監査挙動、Claude/Codex/Cursor/Grok hook adapter、
 project marker、catalog discoveryとhost-local tool DB、評価store、dashboard server、
 diagnostics、installer、release packagingを所有します。
 [dotagents](https://github.com/kitepon/dotagents)が所有するのは共有agent指示と、
@@ -90,11 +90,19 @@ spotter uninstall        # このプロジェクトの hook 登録を解除
 
 ```bash
 npm uninstall -g claude-spotter
-npm install -g claude-spotter
+npm install -g claude-spotter@1.8.0
 spotter --version
 spotter install -y
-spotter codex-hook install
 ```
+
+公開担当は検証済みcommitを`main`へmergeし、`main`から
+[Publish to npm](https://github.com/kitepon/Spotter/actions/workflows/publish.yml)へpackage versionを指定して実行します。
+workflowは指定versionと`main`への着地を検査してから`npm publish`します。
+初回だけ[npm packageのAccess設定](https://www.npmjs.com/package/claude-spotter/access)で
+GitHub ActionsのTrusted Publisherを登録してください。ownerは`kitepon`、repositoryは`Spotter`、
+workflow filenameは`publish.yml`、environmentは空欄、直接の`npm publish`を許可します。
+GitHubが管理するrunnerのOIDCを使うため、以降の公開にnpm tokenの保存やCLIログインは要りません。
+公開後はregistryのversionを確認し、対象端末へそのversionを指定してインストールします。
 
 ## 動作要件
 
@@ -330,7 +338,7 @@ profile から production へ自動昇格しません。`latest` alias や
 - **失敗は声に出して縮退、hostを固めない** (v1.4.15) — この版でbackend failureによるpromptのsilent消去を止めた。v1.4.19以降もnon-blocking挙動は維持し、旧model可視警告文は固定`systemMessage`・stderr・構造event診断へ置換した
 - **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Claude の監査から silent に脱落させていた)
 - **プロジェクト単位の監査隔離** — daemon が監査に使うのはローカル DB のみ。グローバル DB は description 再利用キャッシュに役割限定。**他プロジェクト**でインストールしたツールが現プロジェクトの監査に混入することはない
-- **手放しでカタログ維持** — `spotter install` が Claude DB を自動 seed、Claude / Codex それぞれの SessionStart が host-local DB を bg refresh する。手書き管理は一切不要
+- **手放しでカタログ維持** — `spotter install`が利用可能なhostのDBを作る。Claude / Codex / CursorはSessionStartでバックグラウンド更新し、Grokは初回監査前に更新完了を待つ
 - **Codex native hooks** — Codex host は primary auditor backend として Codex CLI を使い、`.spotter/tool-db.codex.json` を Claude DB と分離し、backend failure は Haiku fallback ではなく明示 error として扱う
 - **監査対象** — ユーザー追加分 (MCP / スキル / サブエージェント) のみ。Claude Code 本体側のツールは意図的に対象外 (Claude は元から自発率が高いため)
 - **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([AGENTS.md §0](https://github.com/kitepon/Spotter/blob/main/AGENTS.md))
