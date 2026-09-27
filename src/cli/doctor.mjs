@@ -9,6 +9,7 @@ import { resolveJevApiKey, JEV_MODEL } from '../core/jev-backend.mjs';
 import { loadDb, globalDbPath, localDbPath } from '../tool-db/loader.mjs';
 import { findSpotterMarker } from '../hooks/lib.mjs';
 import { codexHookDiagnostics } from './codex-hook-cmd.mjs';
+import { grokHookDiagnostics, isGrokHomePresent } from './grok-hook-cmd.mjs';
 import { buildWindowsCompatibleInvocation, execFileWindowsSafe } from '../platform/spawn.mjs';
 
 const execFileP = promisify(execFile);
@@ -75,6 +76,17 @@ export async function runDoctor() {
     warnings += 1;
   }
 
+  if (isGrokHomePresent()) {
+    try {
+      const grokHooks = await grokHookDiagnostics();
+      mark(grokHooks.installed, `grok native hooks: ${grokHooks.installed ? 'installed' : 'not installed'}`);
+      if (!grokHooks.installed) warnings += 1;
+    } catch (err) {
+      mark(false, 'grok native hooks', err.message);
+      warnings += 1;
+    }
+  }
+
   if (projectRoot) {
     const auditorContext = await inspectAuditorContextConfiguration({ projectRoot });
     mark(auditorContext.ok, `evaluation context: ${auditorContext.mode}`, auditorContext.detail);
@@ -83,7 +95,7 @@ export async function runDoctor() {
 
   // tool-db (host-specific global caches). Since v1.2.0 these are not part of
   // audit input; each host audits its project-local DB only. Empty caches are fine.
-  for (const hostAgent of ['claude', 'codex']) {
+  for (const hostAgent of ['claude', 'codex', ...(isGrokHomePresent() ? ['grok'] : [])]) {
     try {
       const path = globalDbPath(hostAgent);
       const global = await loadDb(path);
@@ -105,6 +117,12 @@ export async function runDoctor() {
     const codexDb = await checkLocalAuditDb({ projectRoot, hostAgent: 'codex' });
     mark(codexDb.ok, `codex local audit DB: ${codexDb.count} tools at ${codexDb.path}`, codexDb.detail);
     if (!codexDb.ok) warnings += 1;
+
+    if (isGrokHomePresent()) {
+      const grokDb = await checkLocalAuditDb({ projectRoot, hostAgent: 'grok' });
+      mark(grokDb.ok, `grok local audit DB: ${grokDb.count} tools at ${grokDb.path}`, grokDb.detail);
+      if (!grokDb.ok) warnings += 1;
+    }
   }
 
   console.log('');

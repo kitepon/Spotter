@@ -69,15 +69,17 @@ cd your-project
 spotter install
 ```
 
-On macOS with Homebrew Node, Codex hook commands use the stable
+On macOS with Homebrew Node, Codex and Grok hook commands use the stable
 `/opt/homebrew/bin/node` symlink when it resolves to the current Node binary,
 instead of a versioned `/opt/homebrew/Cellar/node/<version>/...` path. That keeps
-Codex hooks working across Homebrew Node upgrades.
+both sets of hooks working across Homebrew Node upgrades.
 
 Since `v0.3.0`, Spotter requires **explicit per-project install** (the earlier `postinstall` auto-registration was the leading cause of orphan daemons). `spotter install` writes hooks into the project's `.claude/settings.json`; the audit is then active only in Claude Code sessions for that project.
 When the Codex CLI is available, the same `spotter install` also registers user-level Codex native hooks. Project activation still depends on the same per-project `.spotter/marker.json`, so unrelated Codex sessions do not trigger Spotter.
 For Codex, install enables the current `[features].hooks = true` flag and still recognizes older `codex_hooks` diagnostics output for compatibility.
 Installer-owned Codex handlers use the current synchronous command schema. After install or upgrade, review them with `/hooks`, then open a fresh Codex session; `spotter codex-hook diagnostics` reports registration/readiness but does not guess hook trust.
+
+When Grok Build is installed, `spotter install` also registers native Grok hooks and seeds a separate `.spotter/tool-db.grok.json`. Grok prompt and final-response audits write findings to `.spotter/hook-events.jsonl` and the evaluation database. Grok 1.0.41 ignores stdout from passive hooks, so it does not show those findings in the parent conversation. Check registration with `spotter grok-hook diagnostics` and open a new Grok session after install.
 
 After upgrading Spotter, re-run `spotter install` in each installed project when release notes mention hook setting changes. The global package update changes the code path, but existing `.claude/settings.json` timeout values are not rewritten automatically.
 

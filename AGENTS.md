@@ -44,7 +44,7 @@ agent-neutral coreのadapterであり、detector、reporting、stateをhost別�
   path正規化と実行体探索は`paths.mjs`に置く。
 - host依存の決定点は`src/host/adapters.mjs`だけが所有する。host固有実装は専用moduleへ閉じ、
   業務ロジックへ`process.platform`やhost別分岐を散らさない。
-- Claude、Codex、Cursorのtool DBはhost-localかつ別fileで所有し、一方のrefreshで他方を
+- Claude、Codex、Cursor、Grokのtool DBはhost-localかつ別fileで所有し、一方のrefreshで他方を
   pruneまたはoverwriteしない。global DBはdescription cacheだけで、audit入力へ混ぜない。
 
 ### 再帰安全
@@ -87,7 +87,7 @@ daemon lifecycleはapp-level heartbeatとUserPromptSubmit auto-resurrectを使�
 - Claude呼出しはsession-scoped、preamble-once、schema失敗時のsession renewを使う。
 - 隔離workdir `~/.spotter/workdir/`へ`CLAUDE.md`を置かない。
 - Claudeは`.spotter/tool-db.json`、Codexは`.spotter/tool-db.codex.json`、Cursorは
-  `.spotter/tool-db.cursor.json`だけを監査入力にする。
+  `.spotter/tool-db.cursor.json`、Grokは`.spotter/tool-db.grok.json`だけを監査入力にする。
 
 公開CLI、hook / daemon IPC、runtime error store、evaluation、dashboardの現行contractとtest対応表は
 [docs/02_spotter-claude-contract.md](docs/02_spotter-claude-contract.md)を正とする。未解決事項は

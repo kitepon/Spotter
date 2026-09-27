@@ -68,15 +68,17 @@ cd your-project
 spotter install
 ```
 
-macOS の Homebrew Node 環境では、Codex hook command の Node パスに現在の実体と一致する
+macOS の Homebrew Node 環境では、CodexとGrokのhook commandのNodeパスに現在の実体と一致する
 安定 symlink (`/opt/homebrew/bin/node`) を使います。
 `/opt/homebrew/Cellar/node/<version>/...` のような version 固定パスを書かないため、
-Homebrew で Node が更新されても Codex hook が古い Node パスに取り残されません。
+Homebrew で Node が更新されてもhookが古いNodeパスに取り残されません。
 
 `v0.3.0` 以降は**プロジェクト単位の明示的 install** を採用しています (v0.2 までの `postinstall` 自動登録はデーモン増殖の主因だったため撤回)。各プロジェクトの `.claude/settings.json` に hook を登録し、そのプロジェクトでの Claude Code セッションのみで有効になります。
 Codex CLI が使える環境では、同じ `spotter install` が user-level の Codex native hooks も登録します。実際に動くプロジェクトは `spotter install` が作る `.spotter/marker.json` で制限されるため、無関係な Codex セッションでは Spotter は起動しません。
 Codex 側では現行の `[features].hooks = true` を有効化し、互換のため旧 `codex_hooks` diagnostics output も認識します。
 Spotter が所有する Codex handler は現行の同期 command schema で生成します。install / upgrade 後は `/hooks` で review して新しい Codex session を開いてください。`spotter codex-hook diagnostics` は登録と readiness を診断しますが、trust を内部状態から推測しません。
+
+Grok Buildがある環境では、`spotter install`はGrok native hookも登録し、専用の`.spotter/tool-db.grok.json`を初期化します。入力時と応答後の監査結果は`.spotter/hook-events.jsonl`と評価DBに残ります。Grok 1.0.41は受動hookのstdoutを会話へ渡さないため、findingは親会話には表示されません。登録は`spotter grok-hook diagnostics`で確認し、install後は新しいGrok sessionを開いてください。
 
 Spotter を upgrade した後、release note で hook 設定変更が案内されている場合は、各 install 済みプロジェクトで `spotter install` を再実行してください。global package update でコード経路は変わりますが、既存 `.claude/settings.json` の timeout 値は自動では書き換わりません。
 

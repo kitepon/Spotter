@@ -14,9 +14,9 @@ import { writeFile } from 'node:fs/promises';
 const DB_USAGE = `spotter db — manage the host-specific tool-db
 
 Usage:
-  spotter db list [--host-agent claude|codex|automation|cursor]
-  spotter db refresh [--host-agent claude|codex|automation|cursor]
-  spotter db rebuild [--host-agent claude|codex|automation|cursor]
+  spotter db list [--host-agent claude|codex|automation|cursor|grok]
+  spotter db refresh [--host-agent claude|codex|automation|cursor|grok]
+  spotter db rebuild [--host-agent claude|codex|automation|cursor|grok]
 `;
 
 function requireProjectRoot() {

@@ -10,6 +10,7 @@
 import { buildInvestigationSnapshot } from '../tool-db/investigate-claude.mjs';
 import { buildCodexInvestigationSnapshot } from '../tool-db/investigate-codex.mjs';
 import { buildCursorInvestigationSnapshot } from '../tool-db/investigate-cursor.mjs';
+import { buildGrokInvestigationSnapshot } from '../tool-db/investigate-grok.mjs';
 
 const CLAUDE_ADAPTER = Object.freeze({
   hostAgent: 'claude',
@@ -40,11 +41,19 @@ const CURSOR_ADAPTER = Object.freeze({
     buildCursorInvestigationSnapshot({ logFn, projectRoot }),
 });
 
+const GROK_ADAPTER = Object.freeze({
+  hostAgent: 'grok',
+  toolDbFileName: 'tool-db.grok.json',
+  buildSnapshot: ({ logFn, projectRoot, grokBin }) =>
+    buildGrokInvestigationSnapshot({ logFn, projectRoot, grokBin }),
+});
+
 const ADAPTERS = Object.freeze({
   claude: CLAUDE_ADAPTER,
   codex: CODEX_ADAPTER,
   automation: AUTOMATION_ADAPTER,
   cursor: CURSOR_ADAPTER,
+  grok: GROK_ADAPTER,
 });
 
 export function normalizeToolDbHostAgent(hostAgent = 'claude') {
@@ -54,7 +63,7 @@ export function normalizeToolDbHostAgent(hostAgent = 'claude') {
   if (Object.hasOwn(ADAPTERS, hostAgent)) {
     return hostAgent;
   }
-  throw new TypeError(`tool-db hostAgent must be claude, codex, automation, or cursor; got ${hostAgent}`);
+  throw new TypeError(`tool-db hostAgent must be claude, codex, automation, cursor, or grok; got ${hostAgent}`);
 }
 
 export function getHostAdapter(hostAgent = 'claude') {

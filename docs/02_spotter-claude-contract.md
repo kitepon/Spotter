@@ -42,9 +42,9 @@ Public CLI:
 - `spotter install [-y|--yes] [--user] [--auditor-context disabled|throughline]
   [--throughline-command <absolute>] [--throughline-arg <value>]`
 - `spotter uninstall [-y|--yes] [--user]`
-- `spotter db list [--host-agent claude|codex|automation|cursor]`
-- `spotter db refresh [--host-agent claude|codex|automation|cursor]`
-- `spotter db rebuild [--host-agent claude|codex|automation|cursor]`
+- `spotter db list [--host-agent claude|codex|automation|cursor|grok]`
+- `spotter db refresh [--host-agent claude|codex|automation|cursor|grok]`
+- `spotter db rebuild [--host-agent claude|codex|automation|cursor|grok]`
 - `spotter status`
 - `spotter doctor`
 - `spotter diagnostics logs [--log-dir <dir>] [--project <dir>] [--json]`
@@ -60,6 +60,7 @@ Public CLI:
 - `spotter dashboard device --id <id> [--name <name>] [--host <host>] [--port <port>] [--db <path>]`
 - `spotter dashboard hub --config <file> [--host <host>] [--port <port>]`
 - `spotter codex-hook install [--codex-home <dir>]` (Codex native hooks)
+- `spotter grok-hook install|uninstall|diagnostics [<grok-home>]` (Grok native hooks)
 - `spotter codex-hook uninstall [--codex-home <dir>]`
 - `spotter codex-hook diagnostics [--codex-home <dir>] [--project <dir>]`
 - `spotter auditor judge --stage <stage> --input <file> [...]` (experimental)
@@ -144,6 +145,15 @@ the existing observation-failure audit path.
 Codex `SessionStart` handler timeout is 30 seconds. The hook itself only launches detached refresh, but
 Windows nativeではNode起動とproject discoveryが5秒を超える実測があるため、installerは旧5秒設定を
 再install時に30秒へ正規化する。UserPromptSubmit / Stopは従来どおり60秒である。
+
+Grok native hooksは`~/.grok/hooks/spotter.json`へ`SessionStart`、`UserPromptSubmit`、`Stop`、`SessionEnd`を登録する。
+`GROK_HOME`があればその下へ登録する。GrokのcamelCase envelopeを使い、project markerがない場所と
+Spotter子backendのhookを除外する。Claude互換hookへ同じGrokイベントが届いても、`hookEventName`と
+`sessionId`で見分けてClaude経路へは渡さない。Grok catalogは`tool-db.grok.json`だけを読み、
+`SessionStart`でrefreshを完了させてから監査へ進む。`Stop`はGrok transcriptの現行turnのtool callと
+`lastAssistantMessage`を使う。headless実行で最終応答つき`Stop`が欠けた場合は、`SessionEnd`で
+未完の評価turnだけをtranscriptから監査して閉じる。Grok 1.0.41は受動hookのstdoutを無視するため、findingは
+`.spotter/hook-events.jsonl`と評価DBに記録し、会話へは注入しない。
 
 - Claude `SessionStart`
   - returns without spawning when any child-process variable above is set.
