@@ -9,6 +9,7 @@ import { runStatus } from '../src/cli/status.mjs';
 import { runDbList, runDbRefresh, runDbRebuild } from '../src/cli/db-cmd.mjs';
 import { runCodexHookCommand } from '../src/cli/codex-hook-cmd.mjs';
 import { runCursorHookCommand } from '../src/cli/cursor-hook-cmd.mjs';
+import { runGrokHookCommand } from '../src/cli/grok-hook-cmd.mjs';
 import { runAuditorCommand } from '../src/cli/auditor-cmd.mjs';
 import { runDiagnosticsCommand } from '../src/cli/diagnostics-cmd.mjs';
 import { runEvaluationCommand } from '../src/cli/evaluation-cmd.mjs';
@@ -65,6 +66,8 @@ Usage:
                                         (experimental) manage Codex native hooks
   spotter cursor-hook install|uninstall|diagnostics
                                         manage Cursor native catalog-refresh hooks
+  spotter grok-hook install|uninstall|diagnostics
+                                        manage Grok native audit hooks
   spotter auditor judge --stage STAGE --input FILE
                                         (experimental) run primary auditor backend once
   spotter auditor matrix --stage STAGE --input FILE
@@ -126,6 +129,9 @@ async function main() {
       return;
     case 'cursor-hook':
       await runCursorHookCommand({ argv: rest });
+      return;
+    case 'grok-hook':
+      await runGrokHookCommand({ argv: rest });
       return;
     case 'auditor':
       await runAuditorCommand({ argv: rest });

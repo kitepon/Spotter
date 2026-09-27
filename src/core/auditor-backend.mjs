@@ -201,21 +201,21 @@ function selectByPolicy({ hostAgent, policy, projectConfig, env, isCodexCliAvail
       reason: 'codex_host',
     };
   }
-  if (hostAgent === 'claude') {
+  if (hostAgent === 'claude' || hostAgent === 'grok') {
     const codexAvailable = isCodexCliAvailable({ env });
     if (codexAvailable) {
       return {
         backend: 'codex-cli',
         mode: 'codex-cli',
         compatibility: 'none',
-        reason: 'claude_host_codex_cli_detected',
+        reason: `${hostAgent}_host_codex_cli_detected`,
       };
     }
     return {
       backend: 'haiku',
       mode: 'compatibility_haiku',
       compatibility: 'current_haiku',
-      reason: 'claude_host_codex_cli_unavailable',
+      reason: `${hostAgent}_host_codex_cli_unavailable`,
     };
   }
   throw new AuditorBackendError(

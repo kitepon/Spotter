@@ -1,6 +1,6 @@
 # カタログ設計思想 — ユーザー追加ツールだけをauditorへ渡す
 
-この文書は現行のClaude / Codex auditor pathが共有するカタログ設計を説明する。
+この文書は現行のClaude / Codex / Cursor / Grokが共有するカタログ設計を説明する。
 実挙動の権威は`src/tool-db/`と対応testである。
 `UserPromptSubmit` / `Stop` のCodex host対応は完了済み。現行 backend policy は
 [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md) を参照し、完了済みの移行ログは
@@ -51,7 +51,7 @@ auditorは次の順序で判定する。
 auditorは「主役AIが呼び忘れているツールがあれば、その名前を返す」役。**schema までは要らない**。
 呼び方を知るのは主役AIの責任（必要なら`ToolSearch`などでschemaを取得する）。
 
-したがって提案可能なカタログとしてauditorへ渡すのは **`{ツール名, 説明}` のペアだけ**。Claude / Codexそれぞれの
+したがって提案可能なカタログとしてauditorへ渡すのは **`{ツール名, 説明}` のペアだけ**。各hostの
 host-local DBから、そのturnのauditor入力へ投入する。
 
 ```
@@ -121,14 +121,18 @@ logしない。DB自体のJSON/schema違反は
 
 ## description の取得フロー — 3 段階のキャッシュ DB
 
-セッション開始時、Spotter は **その host セッションで使える MCP / スキル / サブエージェント の一覧 (名前)** を取得する。Claude と Codex は利用可能ツールが違うため、ローカル DB は host 別に分ける。
+セッション開始時、Spotter は **その host セッションで使える MCP / スキル / サブエージェント の一覧 (名前)** を取得する。利用可能ツールはhostごとに違うため、ローカル DB を分ける。
 
 1. **プロジェクト host-local DB**
    - Claude: `<project>/.spotter/tool-db.json`
    - Codex: `<project>/.spotter/tool-db.codex.json`
+   - Cursor: `<project>/.spotter/tool-db.cursor.json`
+   - Grok: `<project>/.spotter/tool-db.grok.json`
 2. **host-global DB**
    - Claude: `~/.spotter/tool-db.json`
    - Codex: `~/.spotter/tool-db.codex.json`
+   - Cursor: `~/.spotter/tool-db.cursor.json`
+   - Grok: `~/.spotter/tool-db.grok.json`
 3. **どちらにも無ければ「調べる」** — 各提供者から description を取得。**取得結果はグローバルとローカルの両方に追記する**
 
 ```
@@ -148,8 +152,8 @@ logしない。DB自体のJSON/schema違反は
 
 - **作業負荷の軽減**: 毎セッション全部問い合わせると遅い・無駄。一度引いた description はキャッシュして使い回す
 - **二重書き込みの理由 (v1.2.0 以降の役割再定義)**:
-  - **host-local**: **各 host の監査が使う唯一の入力源**。Claude daemon は `.spotter/tool-db.json`、Codex hooks は `.spotter/tool-db.codex.json` を読み、その host / project の現時点の discovery 結果と一致する
-  - **host-global**: **同じ host の他プロジェクトでの description 再利用キャッシュ**。Claude と Codex でも分離する。daemon / Codex hook の audit には混ぜない (混ぜると過去の別プロジェクトや別 host で discover したツールが現プロジェクトの監査視野に幻として漏れる)
+  - **host-local**: **各 host の監査が使う唯一の入力源**。Claude daemon、Codex hooks、Grok hooksは各hostのproject DBを読む。Cursorは専用DBを更新する
+  - **host-global**: **同じ host の他プロジェクトでの description 再利用キャッシュ**。hostごとに分離し、監査入力へ混ぜない (過去の別プロジェクトや別hostのツールが現在の監査へ混入するため)
 - **グローバル → host-local の write-through**: 次セッションで host-local 単独ヒットになり余計な参照が走らない
 - **drift 補正**: host-local と host-global で同一ツールの description が異なるとき、再調査して両方を上書きする。提供者の description が単一の真実源として優先される
 - **明示的な無効化機構は持たない**: TTL や version tracking のような仕組みは入れない。drift 補正が間接的な無効化として機能する
@@ -165,14 +169,19 @@ logしない。DB自体のJSON/schema違反は
 | スキル | [investigate-skills.mjs](../src/tool-db/investigate-skills.mjs) | user scope `~/.claude/skills/`、project scope `<projectRoot>/.claude/skills/`、有効化プラグインの `skills/` |
 | サブエージェント | [investigate-agents.mjs](../src/tool-db/investigate-agents.mjs) | user scope `~/.claude/agents/`、project scope `<projectRoot>/.claude/agents/`、有効化プラグインの `agents/` |
 
+Grok hostは`tool-db.grok.json`を持ち、[investigate-grok.mjs](../src/tool-db/investigate-grok.mjs)が
+`grok inspect --json`の有効な追加skill / agentと`grok mcp list --json`の有効なMCPを取得する。
+標準のbundled / builtin項目は除外し、MCP説明は共通の`tools/list`で取得する。
+GrokのMCP名はhostが表示する`<server>__<tool>`形で保存する。
+
 Codex host の refresh は [investigate-codex.mjs](../src/tool-db/investigate-codex.mjs) で別経路を使う。MCP は `codex mcp list` / `codex mcp get --json` で membership と spawn 情報を取り、同じ JSON-RPC `tools/list` で description を取得する。実行用envは構造化JSONの値だけを使う。表示形式の伏字を実行設定へ混ぜず、JSON不正は明示エラーとする。envの値はMCP子processへの受渡しにだけ使い、catalogやlogへ保存しない。Codex skills は `~/.codex/skills/.system/`、`~/.codex/skills/`、`<projectRoot>/.codex/skills/`、および `~/.codex/config.toml` で enabled な plugin cache の `skills/` から frontmatter description を読む。Claude の `.claude` 設定を Codex refresh の代替 source として使わない。
 
 プラグインの有効化判定: user scope `~/.claude/settings.json` と project scope `.claude/settings.local.json` の `enabledPlugins` を両方見て、どちらかで `true` なら有効。`~/.claude/plugins/installed_plugins.json` の `installPath` から実体にアクセスする。
 
 ## 収集タイミング (v1.1.0 以降)
 
-- **`spotter install` 時**: `refresh({projectRoot, hostAgent:"claude"})` を同期実行。初回 setup で Claude 用 tool-db.json を seed、install 完了時点で次セッションの daemon が audit に使える状態にする。Codex CLI が見える project install では Codex hooks 登録後に `refresh({projectRoot, hostAgent:"codex"})` も同期実行し、初回 Codex セッションから `.spotter/tool-db.codex.json` を読める状態にする。refresh throw 時は hook 登録も含めて install 自体を失敗扱い (§0 準拠)
-- **SessionStart hook 発火時**: Claude SessionStart は `spotter db refresh --host-agent claude` を detached child として bg 起動 ([session-start.mjs](../src/hooks/session-start.mjs) の `spawnRefreshDetached`)。Codex native SessionStart は `spotter db refresh --host-agent codex` を detached child として bg 起動 ([codex-hook-cmd.mjs](../src/cli/codex-hook-cmd.mjs) の `runCodexSessionStartHook`)。hook 自体は即 return、drift 追従 (新規 MCP / スキル / サブエージェントの追加、削除) は**次セッション以降**に反映される。Claude daemon は起動時の Claude DB を固定保持し、Codex hooks は次 hook 実行時に Codex DB を読み直す
+- **`spotter install` 時**: Claude DBを同期作成する。Codex CLI、Cursor home、Grok homeがある場合は各native hookを登録し、各host DBも同期作成する。refresh失敗時はhook登録後でもinstall自体を失敗として知らせる
+- **SessionStart hook 発火時**: Claude、Codex、Cursorは切り離した子processで各DBを更新する。Grokは初回セッションからカタログを使えるよう、更新完了を待つ。Claude daemonは起動時のDBを固定保持し、CodexとGrok hooksは次のhook実行時に各DBを読む
 - **`spotter db refresh` CLI**: 明示的に叩いた場合も同じ refresh ロジック。`--host-agent codex` を付けると `.spotter/tool-db.codex.json` を更新し、Claude DB には触れない。Claude / Codex とも SessionStart の自動化が通常経路なので、手動実行は smoke / 修復 / 即時反映用
 - **`spotter db rebuild` CLI**: host-local + host-global DB を wipe してから refresh。既定は Claude local + Claude global、`--host-agent codex` なら Codex local + Codex global。カタログ設計変更時 (v1.0.0 の切り替え等) のクリーンスレート用、通常運用では不使用
 

@@ -191,6 +191,7 @@ test('buildCodexExecArgs: pins schema, last-message, read-only sandbox, and stdi
     '--ephemeral',
     '--ignore-user-config',
     '--ignore-rules',
+    '--skip-git-repo-check',
     '--sandbox',
     'read-only',
     '--cd',

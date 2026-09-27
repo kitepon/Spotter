@@ -5,9 +5,8 @@
 
 ## 固定構成
 
-各端末のdevice serverはloopbackだけで待ち受ける。main-server、Mac、FOX WSL2は
-`127.0.0.1:53940`、FOX Windows nativeはWSL2 localhost relayとの衝突を避けて
-`127.0.0.1:53944`を使う。main-serverのhubは
+各端末のdevice serverはloopbackだけで待ち受ける。main-serverとMacは
+`127.0.0.1:53940`、FOX Windows nativeは`127.0.0.1:53944`を使う。main-serverのhubは
 Docker Caddyから到達できる`172.18.0.1:53940`で待ち受ける。評価DBは各端末の
 `~/.spotter/evaluation.db`をその場で読み、端末外へ複製しない。
 
@@ -15,7 +14,6 @@ Docker Caddyから到達できる`172.18.0.1:53940`で待ち受ける。評価DB
 |---|---|---|
 | main-server Ubuntu | `main-server` | `127.0.0.1:53940` |
 | Mac | `mac` | `127.0.0.1:53941` |
-| FOX WSL2 | `fox-wsl` | `127.0.0.1:53942` |
 | FOX Windows native | `fox-windows` | `127.0.0.1:53943` |
 
 hub設定の正本は`ops/dashboard/hub-config.json`である。hubは一覧request時に各upstreamの
@@ -59,27 +57,6 @@ curl --fail http://172.18.0.1:53940/
 ```
 
 device envにも同じPATH行を置く。値は各端末で実測したnpm binを使い、別の起動経路へfallbackしない。
-
-## FOX WSL2
-
-device unitとtunnel unitを`~/.config/systemd/user/`へ配置する。device env:
-
-```ini
-SPOTTER_DEVICE_ID=fox-wsl
-SPOTTER_DEVICE_NAME=FOX-WSL2
-```
-
-tunnel env:
-
-```ini
-SPOTTER_REMOTE_FORWARD=127.0.0.1:53942:127.0.0.1:53940
-SPOTTER_TUNNEL_TARGET=main-server
-```
-
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now spotter-dashboard-device.service spotter-dashboard-tunnel.service
-```
 
 ## FOX Windows native
 
@@ -163,6 +140,6 @@ reverse tunnelを確認する。hubや別端末を再起動する必要はない
 公開受入:
 
 1. 未認証`https://spotter.kitepon.dev/`がCloudflare Accessへredirectされる。
-2. 認証後の`/`が4端末を表示する。
+2. 認証後の`/`が3端末を表示する。
 3. online端末のoverview、project/tool内訳、非採用case、case詳細を表示できる。
 4. 1端末を停止しても一覧と他端末が表示でき、停止端末だけoffline/502になる。

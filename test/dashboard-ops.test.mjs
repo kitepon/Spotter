@@ -10,7 +10,7 @@ test('Mac dashboard LaunchAgent exposes Homebrew Node to the spotter env shebang
   assert.match(plist, /<key>PATH<\/key><string>\/opt\/homebrew\/bin:/);
 });
 
-test('Windows native device avoids the WSL2 localhost relay port', async () => {
+test('Windows native device and tunnel use their assigned ports', async () => {
   const device = await read('ops/dashboard/windows/spotter-dashboard-device.ps1');
   const tunnel = await read('ops/dashboard/windows/spotter-dashboard-tunnel.ps1');
   assert.match(device, /--port 53944/);

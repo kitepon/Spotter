@@ -18,7 +18,7 @@ Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https:/
 ## Ownership boundary
 
 This repository owns the complete Spotter product surface: auditor behavior,
-Claude/Codex hook adapters, project markers, catalog discovery and host-local
+Claude/Codex/Cursor/Grok hook adapters, project markers, catalog discovery and host-local
 tool databases, evaluation storage, dashboard servers, diagnostics, installers,
 and release packaging. [dotagents](https://github.com/kitepon/dotagents)
 owns shared agent instructions and the optional factory-reporter configuration
@@ -69,15 +69,17 @@ cd your-project
 spotter install
 ```
 
-On macOS with Homebrew Node, Codex hook commands use the stable
+On macOS with Homebrew Node, Codex and Grok hook commands use the stable
 `/opt/homebrew/bin/node` symlink when it resolves to the current Node binary,
 instead of a versioned `/opt/homebrew/Cellar/node/<version>/...` path. That keeps
-Codex hooks working across Homebrew Node upgrades.
+both sets of hooks working across Homebrew Node upgrades.
 
 Since `v0.3.0`, Spotter requires **explicit per-project install** (the earlier `postinstall` auto-registration was the leading cause of orphan daemons). `spotter install` writes hooks into the project's `.claude/settings.json`; the audit is then active only in Claude Code sessions for that project.
 When the Codex CLI is available, the same `spotter install` also registers user-level Codex native hooks. Project activation still depends on the same per-project `.spotter/marker.json`, so unrelated Codex sessions do not trigger Spotter.
 For Codex, install enables the current `[features].hooks = true` flag and still recognizes older `codex_hooks` diagnostics output for compatibility.
 Installer-owned Codex handlers use the current synchronous command schema. After install or upgrade, review them with `/hooks`, then open a fresh Codex session; `spotter codex-hook diagnostics` reports registration/readiness but does not guess hook trust.
+
+When Grok Build is installed, `spotter install` also registers native Grok hooks and seeds a separate `.spotter/tool-db.grok.json`. Grok prompt and final-response audits write findings to `.spotter/hook-events.jsonl` and the evaluation database. Grok 1.0.41 ignores stdout from passive hooks, so it does not show those findings in the parent conversation. Check registration with `spotter grok-hook diagnostics` and open a new Grok session after install.
 
 After upgrading Spotter, re-run `spotter install` in each installed project when release notes mention hook setting changes. The global package update changes the code path, but existing `.claude/settings.json` timeout values are not rewritten automatically.
 
@@ -89,11 +91,19 @@ Release install smoke:
 
 ```bash
 npm uninstall -g claude-spotter
-npm install -g claude-spotter
+npm install -g claude-spotter@1.8.0
 spotter --version
 spotter install -y
-spotter codex-hook install
 ```
+
+Maintainer release: merge the tested release commit into `main`, then run
+[Publish to npm](https://github.com/kitepon/Spotter/actions/workflows/publish.yml) from `main` with the package version.
+The workflow checks the requested version and the `main` ancestry gate before `npm publish`.
+For the one-time npm setup, open the [package access settings](https://www.npmjs.com/package/claude-spotter/access)
+and add a GitHub Actions trusted publisher: owner `kitepon`, repository `Spotter`,
+workflow filename `publish.yml`, no environment, and allow direct `npm publish`.
+The GitHub-hosted workflow uses OIDC, so later releases need no stored npm token or CLI login.
+After publication, verify the registry version and install that exact version on each target host.
 
 ## Requirements
 
@@ -253,6 +263,8 @@ spotter codex-hook install
                          # repair / explicitly register Codex native hooks (normally handled by spotter install)
 spotter codex-hook diagnostics
                          # check Codex hook registration/readiness; trust is reviewed with /hooks
+spotter grok-hook diagnostics
+                         # check Grok native audit hook registration
 spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600
                          # experimental reproducible comparison of pinned auditor model profiles
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
@@ -278,7 +290,7 @@ audited by Spotter, and optional proposal-time Throughline evidence. The hub che
 when the device list is requested, so an offline terminal is isolated without a background monitor
 or retry queue.
 
-The reference four-terminal service, reverse-tunnel, and Caddy/Cloudflare layout is documented in
+The reference three-terminal service, reverse-tunnel, and Caddy/Cloudflare layout is documented in
 [docs/11_dashboard-operations.md](https://github.com/kitepon/Spotter/blob/main/docs/11_dashboard-operations.md).
 On Windows, the bundled Task Scheduler installer keeps the interactive user's profile for npm and
 SSH while starting both dashboard PowerShell actions non-interactively with hidden console windows.
@@ -349,7 +361,7 @@ the production values for controlled experiments; diagnostics mark overrides as 
 - **Failures degrade loudly, never freeze the host** (v1.4.15) — this release stopped backend failure from silently erasing a prompt. Since v1.4.19, the non-blocking behavior remains but the old model-visible warning text is replaced by fixed `systemMessage`, stderr, and structured event diagnostics
 - **Plugin-scoped MCP servers** — names like `plugin:everything-claude-code:context7` (with internal colons) are now parsed correctly and their tools enter the catalog. Earlier versions silently collapsed all plugin MCP servers into a single literal `"plugin"`, dropping their tools from Claude's audit
 - **Per-project / per-host audit isolation** — the daemon audits against the local DB only; global DBs are host-specific description caches. Tools discovered in *other* projects or another host can never bleed into this project's audit set
-- **Zero-touch catalog** — `spotter install` seeds the Claude DB automatically; Claude and Codex SessionStart hooks keep their host-local DBs fresh in the background. You never have to maintain the tool list by hand
+- **Zero-touch catalog** — `spotter install` seeds each available host's DB. Claude, Codex, and Cursor refresh in the background; Grok waits for refresh before its first audit
 - **Codex native hooks** — Codex host uses Codex CLI as the primary auditor backend, keeps a separate `.spotter/tool-db.codex.json`, and surfaces backend failures explicitly instead of falling back to Haiku
 - **Audit scope** — only user-added surface (MCP servers / skills / sub-agents). Claude Code's built-in tools are intentionally out of scope; Claude already uses those reliably
 - **Implementation invariants** — no fallbacks, no silent failures, no provisional code (see [§0 in AGENTS.md](https://github.com/kitepon/Spotter/blob/main/AGENTS.md))

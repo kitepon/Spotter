@@ -26,10 +26,11 @@ export async function refresh({
   logFn = () => {},
   claudeBin = 'claude',
   codexBin = 'codex',
+  grokBin = 'grok',
   hostAgent = 'claude',
 } = {}) {
   const adapter = getHostAdapter(hostAgent);
-  const snapshot = await adapter.buildSnapshot({ logFn, claudeBin, codexBin, projectRoot });
+  const snapshot = await adapter.buildSnapshot({ logFn, claudeBin, codexBin, grokBin, projectRoot });
   const toolNames = Array.from(snapshot.keys());
   const investigate = async (name) => snapshot.get(name) ?? null;
 

@@ -34,7 +34,7 @@ test('hub command reads the static device map once and starts the hub server', a
   let factoryOptions;
   const config = { devices: [
     { id: 'mac', name: 'Mac', upstream: 'http://127.0.0.1:53941' },
-    { id: 'fox-wsl', name: 'FOX WSL2', upstream: 'http://127.0.0.1:53942' },
+    { id: 'fox-windows', name: 'FOX Windows native', upstream: 'http://127.0.0.1:53943' },
   ] };
   await runDashboardCommand({
     argv: ['hub', '--config', 'hub.json', '--host', '172.18.0.1'],

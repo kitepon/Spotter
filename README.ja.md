@@ -18,7 +18,7 @@
 
 ## 所有境界
 
-本repositoryはSpotter製品面の全体、すなわち監査挙動、Claude/Codex hook adapter、
+本repositoryはSpotter製品面の全体、すなわち監査挙動、Claude/Codex/Cursor/Grok hook adapter、
 project marker、catalog discoveryとhost-local tool DB、評価store、dashboard server、
 diagnostics、installer、release packagingを所有します。
 [dotagents](https://github.com/kitepon/dotagents)が所有するのは共有agent指示と、
@@ -68,15 +68,17 @@ cd your-project
 spotter install
 ```
 
-macOS の Homebrew Node 環境では、Codex hook command の Node パスに現在の実体と一致する
+macOS の Homebrew Node 環境では、CodexとGrokのhook commandのNodeパスに現在の実体と一致する
 安定 symlink (`/opt/homebrew/bin/node`) を使います。
 `/opt/homebrew/Cellar/node/<version>/...` のような version 固定パスを書かないため、
-Homebrew で Node が更新されても Codex hook が古い Node パスに取り残されません。
+Homebrew で Node が更新されてもhookが古いNodeパスに取り残されません。
 
 `v0.3.0` 以降は**プロジェクト単位の明示的 install** を採用しています (v0.2 までの `postinstall` 自動登録はデーモン増殖の主因だったため撤回)。各プロジェクトの `.claude/settings.json` に hook を登録し、そのプロジェクトでの Claude Code セッションのみで有効になります。
 Codex CLI が使える環境では、同じ `spotter install` が user-level の Codex native hooks も登録します。実際に動くプロジェクトは `spotter install` が作る `.spotter/marker.json` で制限されるため、無関係な Codex セッションでは Spotter は起動しません。
 Codex 側では現行の `[features].hooks = true` を有効化し、互換のため旧 `codex_hooks` diagnostics output も認識します。
 Spotter が所有する Codex handler は現行の同期 command schema で生成します。install / upgrade 後は `/hooks` で review して新しい Codex session を開いてください。`spotter codex-hook diagnostics` は登録と readiness を診断しますが、trust を内部状態から推測しません。
+
+Grok Buildがある環境では、`spotter install`はGrok native hookも登録し、専用の`.spotter/tool-db.grok.json`を初期化します。入力時と応答後の監査結果は`.spotter/hook-events.jsonl`と評価DBに残ります。Grok 1.0.41は受動hookのstdoutを会話へ渡さないため、findingは親会話には表示されません。登録は`spotter grok-hook diagnostics`で確認し、install後は新しいGrok sessionを開いてください。
 
 Spotter を upgrade した後、release note で hook 設定変更が案内されている場合は、各 install 済みプロジェクトで `spotter install` を再実行してください。global package update でコード経路は変わりますが、既存 `.claude/settings.json` の timeout 値は自動では書き換わりません。
 
@@ -88,11 +90,19 @@ spotter uninstall        # このプロジェクトの hook 登録を解除
 
 ```bash
 npm uninstall -g claude-spotter
-npm install -g claude-spotter
+npm install -g claude-spotter@1.8.0
 spotter --version
 spotter install -y
-spotter codex-hook install
 ```
+
+公開担当は検証済みcommitを`main`へmergeし、`main`から
+[Publish to npm](https://github.com/kitepon/Spotter/actions/workflows/publish.yml)へpackage versionを指定して実行します。
+workflowは指定versionと`main`への着地を検査してから`npm publish`します。
+初回だけ[npm packageのAccess設定](https://www.npmjs.com/package/claude-spotter/access)で
+GitHub ActionsのTrusted Publisherを登録してください。ownerは`kitepon`、repositoryは`Spotter`、
+workflow filenameは`publish.yml`、environmentは空欄、直接の`npm publish`を許可します。
+GitHubが管理するrunnerのOIDCを使うため、以降の公開にnpm tokenの保存やCLIログインは要りません。
+公開後はregistryのversionを確認し、対象端末へそのversionを指定してインストールします。
 
 ## 動作要件
 
@@ -249,6 +259,8 @@ spotter codex-hook install
                          # Codex native hooks の修復 / 明示登録 (通常は spotter install が実行)
 spotter codex-hook diagnostics
                          # Codex hook の登録/readiness を診断。trust は /hooks で review
+spotter grok-hook diagnostics
+                         # Grok native監査hookの登録を確認
 spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600
                          # pinned auditor model profile を再現可能に比較する experimental eval
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
@@ -271,7 +283,7 @@ project/tool内訳、非採用case、監査対象request、任意の提案時Thr
 health確認は端末一覧request時だけなので、端末がofflineでもbackground監視や
 retry queueを作らず、その端末だけを切り離せる。
 
-4端末のservice、reverse tunnel、Caddy/Cloudflare構成は
+3端末のservice、reverse tunnel、Caddy/Cloudflare構成は
 [docs/11_dashboard-operations.md](https://github.com/kitepon/Spotter/blob/main/docs/11_dashboard-operations.md)を参照。
 Windows同梱のTask Scheduler installerはnpm・SSH用の対話ユーザープロファイルを維持しつつ、
 dashboardの2つのPowerShell actionを非対話・console非表示で起動する。
@@ -326,7 +338,7 @@ profile から production へ自動昇格しません。`latest` alias や
 - **失敗は声に出して縮退、hostを固めない** (v1.4.15) — この版でbackend failureによるpromptのsilent消去を止めた。v1.4.19以降もnon-blocking挙動は維持し、旧model可視警告文は固定`systemMessage`・stderr・構造event診断へ置換した
 - **プラグイン形式の MCP サーバー対応** — `plugin:everything-claude-code:context7` のように名前に内部コロンを含むサーバーを正しくパースし、配下のツールをカタログに取り込めるようになった (旧版はこの形式のサーバーをすべて単一の `"plugin"` に潰して、Claude の監査から silent に脱落させていた)
 - **プロジェクト単位の監査隔離** — daemon が監査に使うのはローカル DB のみ。グローバル DB は description 再利用キャッシュに役割限定。**他プロジェクト**でインストールしたツールが現プロジェクトの監査に混入することはない
-- **手放しでカタログ維持** — `spotter install` が Claude DB を自動 seed、Claude / Codex それぞれの SessionStart が host-local DB を bg refresh する。手書き管理は一切不要
+- **手放しでカタログ維持** — `spotter install`が利用可能なhostのDBを作る。Claude / Codex / CursorはSessionStartでバックグラウンド更新し、Grokは初回監査前に更新完了を待つ
 - **Codex native hooks** — Codex host は primary auditor backend として Codex CLI を使い、`.spotter/tool-db.codex.json` を Claude DB と分離し、backend failure は Haiku fallback ではなく明示 error として扱う
 - **監査対象** — ユーザー追加分 (MCP / スキル / サブエージェント) のみ。Claude Code 本体側のツールは意図的に対象外 (Claude は元から自発率が高いため)
 - **実装規範** — フォールバック禁止 / silent fallback 禁止 / 暫定コード禁止 ([AGENTS.md §0](https://github.com/kitepon/Spotter/blob/main/AGENTS.md))

@@ -25,6 +25,7 @@ import { refresh } from '../tool-db/refresh.mjs';
 import { localDbPath, globalDbPath } from '../tool-db/loader.mjs';
 import { installCodexHooks } from './codex-hook-cmd.mjs';
 import { installCursorHooks, isCursorHomePresent } from './cursor-hook-cmd.mjs';
+import { installGrokHooks, isGrokHomePresent } from './grok-hook-cmd.mjs';
 import { prepareRuntimeErrorStoreDirectory } from '../core/runtime-error-store.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -59,11 +60,14 @@ export async function runInstall({
   skipRefresh = false,
   skipCodexHooks = skipRefresh,
   skipCursorHooks = skipRefresh,
+  skipGrokHooks = skipRefresh,
   refreshFn = refresh,
   codexCliPresentFn = isCodexCliPresent,
   installCodexHooksFn = installCodexHooks,
   cursorHomePresentFn = isCursorHomePresent,
   installCursorHooksFn = installCursorHooks,
+  grokHomePresentFn = isGrokHomePresent,
+  installGrokHooksFn = installGrokHooks,
   prepareRuntimeErrorStoreDirectoryFn = prepareRuntimeErrorStoreDirectory,
   auditorContext,
   resolveDefaultAuditorContextFn = resolveDefaultAuditorContext,
@@ -166,6 +170,18 @@ export async function runInstall({
     }
   }
 
+  let grokHooksRegistered = false;
+  if (target === 'project' && !skipGrokHooks) {
+    if (grokHomePresentFn()) {
+      const result = await installGrokHooksFn();
+      grokHooksRegistered = true;
+      console.log('  Grok hooks registered');
+      console.log(`  Grok hooks: ${result.hooksPath}`);
+    } else {
+      console.log('  Grok home not found — Grok hooks not registered');
+    }
+  }
+
   // Seed the tool-db so the first session has something to audit against.
   // Runs regardless of whether settings.json changed — re-running `spotter install`
   // on an already-installed project is the canonical way to refresh tool-db drift
@@ -192,12 +208,18 @@ export async function runInstall({
         console.log(`  Cursor local DB:  ${localDbPath(cwd, 'cursor')}`);
         console.log(`  Cursor global DB: ${globalDbPath('cursor')}`);
       }
+      if (grokHooksRegistered) {
+        const grokResolved = await refreshFn({ projectRoot: cwd, hostAgent: 'grok', logFn: log });
+        console.log(`  ${grokResolved.size} Grok tool(s) resolved`);
+        console.log(`  Grok local DB:  ${localDbPath(cwd, 'grok')}`);
+        console.log(`  Grok global DB: ${globalDbPath('grok')}`);
+      }
     } catch (err) {
       // §0: throw (fallback 禁止). But surface the recovery path so the user isn't
       // left with "hooks registered, tool-db missing" and no clue what to run.
       process.stderr.write(`\nspotter install: tool-db seeding failed.\n`);
       process.stderr.write(`  hooks are registered but tool-db is not ready.\n`);
-      process.stderr.write(`  recover with: spotter db refresh and, for Codex, spotter db refresh --host-agent codex; for Cursor, spotter db refresh --host-agent cursor\n`);
+      process.stderr.write(`  recover with: spotter db refresh and host-specific spotter db refresh --host-agent codex|cursor|grok\n`);
       throw err;
     }
   }
@@ -213,6 +235,11 @@ export async function runInstall({
     console.log('  Cursor catalog refresh is active: new Cursor Agent sessions refresh tool-db.cursor.json');
   } else if (target === 'project' && !skipCursorHooks) {
     console.log('  Cursor hooks are not active: rerun `spotter install` where ~/.cursor exists');
+  }
+  if (grokHooksRegistered) {
+    console.log('  Grok audit hooks are active in new Grok sessions; findings are written to hook events');
+  } else if (target === 'project' && !skipGrokHooks) {
+    console.log('  Grok hooks are not active: rerun `spotter install` where ~/.grok exists');
   }
 }
 

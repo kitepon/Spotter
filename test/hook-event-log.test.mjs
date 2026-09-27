@@ -50,7 +50,7 @@ test('appendHookEvent: writes a JSON line with schema, timestamp, and host', asy
 test('appendHookEvent: rejects unknown host values', async () => {
   await assert.rejects(
     () => appendHookEvent({ projectRoot: '/tmp', host: 'whatever', event: {} }),
-    /host must be "claude" or "codex"/
+    /host must be "claude", "codex", or "grok"/
   );
 });
 

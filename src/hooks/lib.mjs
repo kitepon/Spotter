@@ -47,16 +47,15 @@ export function isSubagentCall(input) {
 }
 
 // Grok invokes Claude-compatible hook commands with a camelCase wire envelope.
-// Spotter does not support Grok as a host: ignore that envelope before any
-// project lookup, daemon, evaluation, or hook-event side effect.
+// Current Grok also adds snake_case compatibility aliases, so session_id alone
+// cannot distinguish its payload from Claude's. Native Grok hooks own this input.
 export function isUnsupportedNonClaudeEnvelope(input) {
   return input !== null
       && typeof input === 'object'
       && typeof input.sessionId === 'string'
       && input.sessionId.length > 0
       && typeof input.hookEventName === 'string'
-      && input.hookEventName.length > 0
-      && !Object.hasOwn(input, 'session_id');
+      && input.hookEventName.length > 0;
 }
 
 // Walk up from startCwd looking for .spotter/marker.json. Returns the project
@@ -104,7 +103,9 @@ export async function readStdinJson() {
     throw err;
   }
   try {
-    return JSON.parse(raw);
+    // Windows Cursor may prefix hook JSON with a UTF-8 BOM. Node decodes it
+    // to U+FEFF, which JSON.parse rejects even though the envelope is valid.
+    return JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
   } catch (cause) {
     const err = new Error(`hook stdin is not valid JSON: ${cause.message}`);
     err.exitCode = 2;

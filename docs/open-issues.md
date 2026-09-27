@@ -10,16 +10,16 @@ Spotterの現在の未完事項だけを記録する。
 - 解決した項目は本文へ残さず、CHANGELOGまたは完了計画へ移す。
 - P0は現在のrollout判断、P1は次の運用窓、P2は既知だが未発生のplatform固有リスク。
 
-## P1 — Grok親の正式host対応
+## P1 — Grok監査結果の会話内表示
 
-GrokのcamelCase hook envelopeは現在、副作用前のunsupported no-opとして扱う。
-dotagentsのGrok親配線は完了したが、Spotter自身のhost対応は未実装である。
+Grok 1.0.41のnative `UserPromptSubmit` / `Stop` hookはstdoutを会話へ渡さない。
+SpotterはGrok固有のcatalogを使って監査し、findingを構造eventと評価DBに記録するが、
+入力時の提案をGrokの親会話へ届ける経路は現時点でない。
 
 ### 次の行動
 
-Grok固有のinstall、hook envelope、catalog refresh、diagnosticsの契約をこのrepoで決める。
-focused testと実Grok session受入を通し、Spotterのreleaseと単独installが成立してから、
-dotagentsのhost matrixを`unsupported`から更新する。
+Grokに受動hookから会話へ安全に情報を渡す公式機能が追加された時、
+固定文のparent-output projectorを接続する。追加まではGrokの表示機能を対応済みと数えない。
 
 ## P1 — v1.5.4以降のPrimary auditor SLO判定
 

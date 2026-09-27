@@ -45,8 +45,8 @@ export async function appendHookEvent({ projectRoot, host, event } = {}) {
   if (typeof projectRoot !== 'string' || projectRoot.length === 0) {
     throw new TypeError('appendHookEvent: projectRoot must be a non-empty string');
   }
-  if (host !== 'claude' && host !== 'codex') {
-    throw new TypeError(`appendHookEvent: host must be "claude" or "codex" (got ${String(host)})`);
+  if (!['claude', 'codex', 'grok'].includes(host)) {
+    throw new TypeError(`appendHookEvent: host must be "claude", "codex", or "grok" (got ${String(host)})`);
   }
   if (!event || typeof event !== 'object') {
     throw new TypeError('appendHookEvent: event must be an object');
