@@ -3,6 +3,13 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.8.0 — 2026-09-27
+
+- Grok Buildのnative hookとhost専用カタログを追加。Linux、macOS、Windows nativeの実セッションで入力時・応答後の監査を確認した。Grok 1.0.41は受動hookのstdoutを会話へ渡さないため、findingは構造eventと評価DBに記録する。
+- Grokのheadless実行で最終応答つき`Stop`が欠けたturnを`SessionEnd`で補完する。Windowsでは`SessionStart`のカタログ更新完了を待ち、初回監査から有効なツールを使う。
+- Windows Cursorのhook入力に付くUTF-8 BOMを受け付け、Git管理外のprojectでもCodex CLI監査を実行できるようにする。
+- dashboardの現行構成から廃止済みFOX WSL2端末を外し、3端末を表示する。
+
 ## 1.7.3 — 2026-09-24
 
 - 退役するcodex-sidecarの明示CLI、追加監査dispatch、primary auditor backend指定、診断と関連コードを削除する。Jev、Codex CLI、Haikuの主監査は維持する。

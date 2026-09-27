@@ -9,6 +9,7 @@ SLO（Service Level Objective）は「通常運用で、どの程度の速さ・
 - production auditor: Jev認証設定時はJev（model正本は`src/core/jev-backend.mjs`）、未設定時は既存backend選択に従う。
 - Codex native `UserPromptSubmit` / `Stop`
 - Claude host の primary auditor（backend 別に集計し、Codex と混ぜない）
+- Grok native `UserPromptSubmit` / `Stop`（host別に集計し、会話内表示の成功率には含めない）
 
 ## 運用 SLO
 
@@ -22,6 +23,7 @@ SLO（Service Level Objective）は「通常運用で、どの程度の速さ・
 | auth / usage limitを除くbackend失敗率 | 2%以下 | 2%以下 |
 
 Codex nativeは外側Hook 60秒・auditor child 20秒、Claude hostは外側Hook 60秒・daemon/backend 45秒である。
+Grok nativeは外側Hook 60秒・auditor child 45秒である。GrokのSessionStartはcatalog更新完了を待つ。
 SLOを満たさない時に上限だけを延ばして正常扱いにはしない。対応順は (1) Hook重複除去、
 (2) catalog/prompt workload削減、(3) model/effort再評価、
 (4) cache/skip条件、(5) 別承認でtimeout変更、とする。認証失効・利用上限・非対応modelは別障害として

@@ -153,7 +153,8 @@ Spotter子backendのhookを除外する。Claude互換hookへ同じGrokイベン
 `SessionStart`でrefreshを完了させてから監査へ進む。`Stop`はGrok transcriptの現行turnのtool callと
 `lastAssistantMessage`を使う。headless実行で最終応答つき`Stop`が欠けた場合は、`SessionEnd`で
 未完の評価turnだけをtranscriptから監査して閉じる。Grok 1.0.41は受動hookのstdoutを無視するため、findingは
-`.spotter/hook-events.jsonl`と評価DBに記録し、会話へは注入しない。
+`.spotter/hook-events.jsonl`と評価DBに記録し、会話へは注入しない。評価DB参照とtranscript読取が
+失敗した場合は固定stderrと構造eventを残し、hostを停止させない。
 
 - Claude `SessionStart`
   - returns without spawning when any child-process variable above is set.

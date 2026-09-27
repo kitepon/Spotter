@@ -251,6 +251,8 @@ spotter codex-hook install
                          # Codex native hooks の修復 / 明示登録 (通常は spotter install が実行)
 spotter codex-hook diagnostics
                          # Codex hook の登録/readiness を診断。trust は /hooks で review
+spotter grok-hook diagnostics
+                         # Grok native監査hookの登録を確認
 spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600
                          # pinned auditor model profile を再現可能に比較する experimental eval
 spotter uninstall        # hook 登録を解除 (~/.spotter は残す)
@@ -273,7 +275,7 @@ project/tool内訳、非採用case、監査対象request、任意の提案時Thr
 health確認は端末一覧request時だけなので、端末がofflineでもbackground監視や
 retry queueを作らず、その端末だけを切り離せる。
 
-4端末のservice、reverse tunnel、Caddy/Cloudflare構成は
+3端末のservice、reverse tunnel、Caddy/Cloudflare構成は
 [docs/11_dashboard-operations.md](https://github.com/kitepon/Spotter/blob/main/docs/11_dashboard-operations.md)を参照。
 Windows同梱のTask Scheduler installerはnpm・SSH用の対話ユーザープロファイルを維持しつつ、
 dashboardの2つのPowerShell actionを非対話・console非表示で起動する。

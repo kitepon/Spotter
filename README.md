@@ -255,6 +255,8 @@ spotter codex-hook install
                          # repair / explicitly register Codex native hooks (normally handled by spotter install)
 spotter codex-hook diagnostics
                          # check Codex hook registration/readiness; trust is reviewed with /hooks
+spotter grok-hook diagnostics
+                         # check Grok native audit hook registration
 spotter auditor model-matrix --fixtures test/fixtures/auditor-model-matrix.v2.json --recent-turns 2 --body-cap 600
                          # experimental reproducible comparison of pinned auditor model profiles
 spotter uninstall        # remove hooks from this project (leaves ~/.spotter intact)
@@ -280,7 +282,7 @@ audited by Spotter, and optional proposal-time Throughline evidence. The hub che
 when the device list is requested, so an offline terminal is isolated without a background monitor
 or retry queue.
 
-The reference four-terminal service, reverse-tunnel, and Caddy/Cloudflare layout is documented in
+The reference three-terminal service, reverse-tunnel, and Caddy/Cloudflare layout is documented in
 [docs/11_dashboard-operations.md](https://github.com/kitepon/Spotter/blob/main/docs/11_dashboard-operations.md).
 On Windows, the bundled Task Scheduler installer keeps the interactive user's profile for npm and
 SSH while starting both dashboard PowerShell actions non-interactively with hidden console windows.
