@@ -12,7 +12,7 @@ Spotterの現在の未完事項だけを記録する。
 
 ## P0 — BugHubへの製品報告rollout
 
-Spotter専用のopt-in送信CLIは実装中。BugHubの受け口と各端末の合鍵は担当者側で準備中で、
+Spotter専用のopt-in送信CLIはdraft PR #5で実装済み。BugHubの受け口と各端末の合鍵は担当者側で準備中で、
 Spotterのreleaseと4端末への適用にはオーナー承認が必要。既存のauditor修正PR #4も
 版付きreleaseと4端末への導入まで台帳上は未解決。
 
