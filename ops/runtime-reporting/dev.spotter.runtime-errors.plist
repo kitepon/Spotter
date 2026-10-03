@@ -3,7 +3,8 @@
 <plist version="1.0"><dict>
   <key>Label</key><string>dev.spotter.runtime-errors</string>
   <key>ProgramArguments</key><array>
-    <string>REPLACE_WITH_ABSOLUTE_SPOTTER_PATH</string>
+    <string>REPLACE_WITH_ABSOLUTE_NODE_PATH</string>
+    <string>REPLACE_WITH_ABSOLUTE_SPOTTER_SCRIPT_PATH</string>
     <string>runtime-errors</string><string>report</string>
   </array>
   <key>StartInterval</key><integer>3600</integer>
