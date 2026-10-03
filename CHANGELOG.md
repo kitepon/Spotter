@@ -3,10 +3,11 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
-## Unreleased
+## 1.8.1 — 2026-10-03
 
 - Jev監査の大きなtool catalogを入力上限内のリクエストへ分け、全候補の判定とtoken usageを統合する。
   上限超過のHTTP 400で監査が止まる問題を修正し、途中の失敗は部分的なpassへ変換しない。
+- 製品full CIのLinux席をlinux-workstationに限定し、main-serverでfull CIを実行しない。
 
 ## 1.8.0 — 2026-09-27
 
