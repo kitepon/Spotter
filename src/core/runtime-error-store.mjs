@@ -16,6 +16,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { version } from '../version.mjs';
 import { WINDOWS_POWERSHELL_COMMAND } from '../platform/spawn.mjs';
+import { readRuntimeReportConfig } from './runtime-report-config.mjs';
 
 export const RUNTIME_ERROR_STORE_SCHEMA = 'spotter.runtime_errors.v1';
 export const RUNTIME_ERROR_STATE_SCHEMA_VERSION = '1.0';
@@ -109,6 +110,15 @@ export function runtimeErrorFingerprint(definition) {
 }
 
 export async function readRuntimeCollectionMode(options = {}) {
+  if (options.configPath == null) {
+    const product = await readRuntimeReportConfig(options);
+    if (product.state !== 'missing') {
+      if (product.state === 'malformed') return { mode: 'config_malformed', enabled: false };
+      return product.collectionEnabled
+        ? { mode: 'enabled', enabled: true }
+        : { mode: 'disabled', enabled: false };
+    }
+  }
   const configPath = options.configPath ?? defaultFactoryReporterConfigPath(options);
   if (!configPath) return { mode: 'config_missing', enabled: false };
   let raw;
@@ -223,7 +233,8 @@ export async function observeRuntimeErrorIsolatedSafe(input, options = {}) {
   const observationId = randomUUID().replaceAll('-', '');
   const expectedFingerprint = runtimeErrorFingerprint(RUNTIME_ERROR_DEFINITIONS[kind]);
   const workerOptions = {
-    configPath: options.configPath ?? defaultFactoryReporterConfigPath(options),
+    configPath: options.configPath ?? null,
+    productConfigPath: options.productConfigPath,
     storePath: options.storePath ?? defaultRuntimeErrorStorePath(options),
     productVersion: options.productVersion ?? version,
     platform: options.platform ?? process.platform,

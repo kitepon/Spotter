@@ -1,0 +1,6 @@
+[Unit]
+Description=Send pending Spotter runtime errors to owner-LAN BugHub
+
+[Service]
+Type=oneshot
+ExecStart=REPLACE_WITH_ABSOLUTE_SPOTTER_PATH runtime-errors report

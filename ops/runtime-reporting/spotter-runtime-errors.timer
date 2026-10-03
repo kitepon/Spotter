@@ -1,0 +1,10 @@
+[Unit]
+Description=Report pending Spotter runtime errors hourly
+
+[Timer]
+OnStartupSec=5m
+OnUnitActiveSec=1h
+Unit=spotter-runtime-errors.service
+
+[Install]
+WantedBy=timers.target

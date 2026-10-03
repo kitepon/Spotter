@@ -10,6 +10,17 @@ Spotterの現在の未完事項だけを記録する。
 - 解決した項目は本文へ残さず、CHANGELOGまたは完了計画へ移す。
 - P0は現在のrollout判断、P1は次の運用窓、P2は既知だが未発生のplatform固有リスク。
 
+## P0 — BugHubへの製品報告rollout
+
+Spotter専用のopt-in送信CLIはdraft PR #5で実装済み。BugHubの受け口は本番へ配備済みで、各端末の合鍵は担当者側の承認待ち。
+Spotterのreleaseと4端末への適用にはオーナー承認が必要。既存のauditor修正PR #4も
+版付きreleaseと4端末への導入まで台帳上は未解決。
+
+### 次の行動
+
+署名試験、製品CI、レビューを通してdraft PRを用意する。BugHubの受け口と合鍵が届いたら、
+オーナーの公開・適用承認後に4端末で送信を有効にし、端末・版・送信時刻・受領結果を報告する。
+
 ## P1 — Grok監査結果の会話内表示
 
 Grok 1.0.41のnative `UserPromptSubmit` / `Stop` hookはstdoutを会話へ渡さない。

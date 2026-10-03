@@ -51,6 +51,7 @@ Public CLI:
 - `spotter diagnostics factory`
 - `spotter diagnostics runtime-errors [snapshot [--after-cursor <n>] [--limit <n>]
   | ack <cursor> | resolve <fingerprint> | reopen <fingerprint> | compact]`
+- `spotter runtime-errors report`
 - `spotter evaluation report [--project <path>] [--from <ISO>] [--to <ISO>] [--host <host>]
   [--tool-id <id>] [--backend <name>] [--model <name>] [--spotter-version <version>] [--json]`
 - `spotter evaluation cases --outcome <outcome> [--project <path>] [--from <ISO>] [--to <ISO>]
@@ -316,9 +317,10 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
 - `spotter diagnostics logs` is read-only. It parses daemon log files and reports
   `pass:false`, missing-tool counts, duration summaries, catalog-external drops,
   role-collapse resets, Haiku failures, and handler errors without changing daemon behavior.
-- Runtime error collection is a separate local projection gated only by the canonical dotagents
-  reporter config's JSON boolean `collection.enabled: true`. Missing/malformed/disabled config does
-  not create or touch the store. The store performs no network I/O and accepts only fixed Spotter
+- Runtime error collection is a separate local projection gated by Spotter's owner-private product
+  config `collection.enabled: true`. If absent, the canonical dotagents reporter config is a
+  collection-only compatibility input. Malformed/disabled product config fails closed. The store
+  performs no network I/O and accepts only fixed Spotter
   failure kinds; code, template, component, and severity come from a closed registry rather than
   exception/provider/hook input. Fingerprints use the factory-v1 canonical SHA-256 sequence.
 - The daemon owns transport and PID-state persistence observations. The daemon owns Claude primary
@@ -339,6 +341,13 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
 - `spotter diagnostics runtime-errors` is the read-only allow-listed snapshot. `diagnostics logs` and
   `diagnostics factory` expose only bounded collection/store status and counts. Cursor acknowledgement
   is monotonic; resolve/reopen advance sequence; compaction preserves all unacknowledged records.
+- `spotter runtime-errors report` is an independent one-shot product sender. It requires Spotter's
+  product config to enable both collection and reporting. It reads the BugHub owner-private credential,
+  sends at most 500 pending records and 512 KiB to the fixed owner-LAN endpoint, and projects only the
+  contract's allow-listed fields. The request signs the exact body bytes with HMAC-SHA256. Only HTTP 200
+  with `accepted:true`, matching `report_id`, and a valid response signature advances the cursor. 422
+  blocks repeat sends by the same installed version. Rejected credentials pause until rotation; clock
+  skew does not acknowledge. Hourly OS scheduling is an operator opt-in.
 
 ## Evaluation Contract
 

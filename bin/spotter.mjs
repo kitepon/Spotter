@@ -12,6 +12,7 @@ import { runCursorHookCommand } from '../src/cli/cursor-hook-cmd.mjs';
 import { runGrokHookCommand } from '../src/cli/grok-hook-cmd.mjs';
 import { runAuditorCommand } from '../src/cli/auditor-cmd.mjs';
 import { runDiagnosticsCommand } from '../src/cli/diagnostics-cmd.mjs';
+import { runRuntimeErrorReportCommand } from '../src/cli/runtime-error-report-cmd.mjs';
 import { runEvaluationCommand } from '../src/cli/evaluation-cmd.mjs';
 import { runDashboardCommand } from '../src/cli/dashboard-cmd.mjs';
 import {
@@ -53,6 +54,7 @@ Usage:
   spotter diagnostics factory           emit a fixed-field read-only JSON diagnostic
   spotter diagnostics runtime-errors [snapshot|ack|resolve|reopen|compact]
                                         consume the local allow-listed aggregate store
+  spotter runtime-errors report          send pending aggregates to the owner LAN BugHub (opt-in)
   spotter evaluation report [--project PATH] [--from ISO] [--to ISO] [--host HOST]
                             [--tool-id ID] [--backend NAME] [--model NAME]
                             [--spotter-version VERSION] [--json]
@@ -150,6 +152,10 @@ async function main() {
         return;
       }
       await runDiagnosticsCommand({ argv: rest });
+      return;
+    case 'runtime-errors':
+      if (rest[0] !== 'report') throw Object.assign(new Error('usage: spotter runtime-errors report'), { exitCode: 2 });
+      await runRuntimeErrorReportCommand({ argv: rest.slice(1) });
       return;
     case 'evaluation':
       await runEvaluationCommand({ argv: rest });

@@ -50,6 +50,7 @@
     "src",
     "scripts",
     "ops/dashboard",
+    "ops/runtime-reporting",
     "docs/11_dashboard-operations.md",
     "README.md",
     "LICENSE",
