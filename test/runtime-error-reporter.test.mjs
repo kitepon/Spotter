@@ -10,7 +10,7 @@ import {
   readRuntimeReportConfig, readRuntimeReportCredential,
 } from '../src/core/runtime-report-config.mjs';
 import {
-  observeRuntimeError, readRuntimeCollectionMode, readRuntimeErrorStoreStatus,
+  observeRuntimeError, readRuntimeCollectionMode, readRuntimeErrorStoreStatus, resolveRuntimeError,
 } from '../src/core/runtime-error-store.mjs';
 
 const secret = 'bughub-test-secret-do-not-use-0123456789abcdef';
@@ -73,6 +73,20 @@ test('report projects only approved fields and acknowledges after verified recei
   }
   const auth = sent.init.headers.Authorization;
   assert.equal(auth, `BugHub-HMAC-SHA256 key_id=key-1, ts=1790000000, sig=${signRuntimeReport(secret, '1790000000', sent.init.body)}`);
+});
+
+test('a report respects the 500-record and 512-KiB limits and acknowledges only its prefix', async () => {
+  const seed = (await fixture().options.readSnapshot()).records[0];
+  const records = Array.from({ length: 600 }, (_, index) => ({
+    ...seed, fingerprint: index.toString(16).padStart(64, '0'),
+    sequence: index + 43, message_template: 'x'.repeat(1024),
+  }));
+  const box = fixture({ readSnapshot: async () => ({ collection: 'enabled', records }) });
+  const result = await reportRuntimeErrors(box.options);
+  assert.equal(result.status, 'accepted');
+  assert.ok(result.count < 500);
+  assert.ok(box.getSent().init.body.length <= 512 * 1024);
+  assert.equal(box.getAcknowledged(), 42 + result.count);
 });
 
 test('unverified 200, timeout, and schema rejection never acknowledge', async () => {
@@ -160,12 +174,16 @@ test('product-owned opt-in collection flows through signed send and store acknow
   await writeFile(productConfigPath, JSON.stringify({ schema_version: '1.0', collection: { enabled: true }, reporting: { enabled: true } }), { mode: 0o600 });
   await writeFile(credentialPath, JSON.stringify({ url: 'http://192.168.1.2:39310/api/products/v1/runtime-errors', key_id: 'k1', secret }), { mode: 0o600 });
   const storeOptions = { productConfigPath, storePath };
-  assert.equal((await observeRuntimeError('auditor_unavailable', { ...storeOptions, now: () => new Date(observed) })).collected, true);
+  const observation = await observeRuntimeError('auditor_unavailable', { ...storeOptions, now: () => new Date(observed) });
+  assert.equal(observation.collected, true);
+  await resolveRuntimeError({ fingerprint: observation.fingerprint }, { ...storeOptions, now: () => new Date(received) });
   const result = await reportRuntimeErrors({
     productConfigPath, credentialPath, storeOptions, nowMs: Date.parse(observed),
     fetchFn: async (_url, init) => {
       const body = JSON.parse(init.body.toString('utf8'));
       assert.equal(body.runtime_errors[0].occurrence_count, 1);
+      assert.equal(body.runtime_errors[0].status, 'resolved');
+      assert.deepEqual(body.resolutions, [{ fingerprint: observation.fingerprint, resolved_at: received, reason_code: 'operator_resolved' }]);
       return { status: 200, text: async () => JSON.stringify({
         accepted: true, report_id: body.report_id, received_at: received,
         sig: signRuntimeReportReceipt(secret, body.report_id, received),

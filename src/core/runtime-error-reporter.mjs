@@ -138,7 +138,7 @@ export async function reportRuntimeErrors(options = {}) {
   };
   let cursor = status.acknowledged_through;
   let body;
-  for (const record of snapshot.records) {
+  for (const record of snapshot.records.slice(0, 500)) {
     const { item, resolution } = project(record);
     payload.runtime_errors.push(item);
     if (resolution) payload.resolutions.push(resolution);
