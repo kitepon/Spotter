@@ -10,7 +10,8 @@ import {
   readRuntimeReportConfig, readRuntimeReportCredential,
 } from '../src/core/runtime-report-config.mjs';
 import {
-  observeRuntimeError, readRuntimeCollectionMode, readRuntimeErrorStoreStatus, resolveRuntimeError,
+  observeRuntimeError, observeRuntimeErrorIsolatedSafe, readRuntimeCollectionMode,
+  readRuntimeErrorStoreStatus, resolveRuntimeError,
 } from '../src/core/runtime-error-store.mjs';
 import { writeOwnerPrivateFile } from '../src/platform/owner-private-file.mjs';
 
@@ -213,4 +214,10 @@ test('Windows owner-private product config and credential survive ACL readback',
   }));
   assert.equal((await readRuntimeReportConfig({ productConfigPath })).reportingEnabled, true);
   assert.equal((await readRuntimeReportCredential({ credentialPath })).key_id, 'spotter:fox');
+  const storePath = join(root, 'state', 'runtime-errors-v1.json');
+  const observed = await observeRuntimeErrorIsolatedSafe('auditor_unavailable', {
+    productConfigPath, storePath, timeoutMs: 5_000, writeError: () => {},
+  });
+  assert.deepEqual(observed, { collected: true });
+  assert.equal((await readRuntimeErrorStoreStatus({ productConfigPath, storePath })).unacknowledged, 1);
 });
