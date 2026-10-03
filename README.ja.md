@@ -22,7 +22,7 @@
 project marker、catalog discoveryとhost-local tool DB、評価store、dashboard server、
 diagnostics、installer、release packagingを所有します。
 [dotagents](https://github.com/kitepon/dotagents)が所有するのは共有agent指示と、
-Spotterの端末内runtime-error集計を有効化する任意のfactory-reporter設定です。
+旧来の端末内runtime-error集計に使える任意のfactory-reporter設定です。実行時エラーの送信はSpotterが所有します。
 Spotterのcatalogやhost統合はdotagentsの責務ではありません。MarkItDownは別区分の第三者CLIです。
 
 Claude には「使えるツールがあるのに、使うべきタイミングで使わない」という構造的な弱点があります。記録すべき決定を memory / caveat MCP に残さない、docs lookup MCP を呼ばずに古い知識で応答する、ブラウザ自動化 MCP で確認せず UI 状態を推測する — **「分からないと自覚できない」から、ツールを取りに行けない**。
@@ -290,9 +290,10 @@ dashboardの2つのPowerShell actionを非対話・console非表示で起動す�
 
 ## 端末内runtime error集計
 
-factory diagnosticsとruntime error集計は既定OFFです。canonicalなdotagents factory reporter設定で
-JSON booleanの`collection.enabled: true`が明示された場合だけ、固定codeの失敗を端末内へ集計します。
-Spotterはreporting credentialもnetwork送信経路も持ちません。保存APIは固定templateとallow-list済み集計だけを受け付け、
+factory diagnosticsとruntime error集計は既定OFFです。Spotter専用設定で
+`collection.enabled: true`を明示した場合、固定codeの失敗を端末内へ集計します。この設定が無い端末では、
+旧dotagents factory reporter設定を収集だけの互換入力として読みます。送信はSpotter専用設定の
+`reporting.enabled: true`で別に明示した時だけ行い、既定では通信しません。保存APIは固定templateとallow-list済み集計だけを受け付け、
 例外本文、stdout/stderr、stack、prompt、hook payload、finding、ファイル内容、絶対pathを保存しません。
 
 daemonとCodex hookの収集境界は、bounded timeout付きのkill可能なchild process groupで実行します。
@@ -304,6 +305,19 @@ readbackを検証します。
 `spotter diagnostics runtime-errors`はread-only snapshotを返し、`ack`、`resolve`、`reopen`、`compact`が
 受理後のlifecycle操作です。`spotter diagnostics logs`と`spotter diagnostics factory`はboundedな件数と
 statusだけを返し、store/config pathやrecord本文を出しません。
+
+指揮官の端末で送信を有効にする場合、所有者だけが読める通常ファイル（0600）を
+`~/.config/spotter/runtime-errors.json`（Windowsは`%LOCALAPPDATA%\Spotter\runtime-errors-config.json`）
+に置きます。内容は`{"schema_version":"1.0","collection":{"enabled":true},"reporting":{"enabled":true}}`です。
+BugHub担当が別途、端末ごとの合鍵を`~/.config/bughub/product-credentials/spotter.json`
+（Windowsは`%LOCALAPPDATA%\bughub\product-credentials\spotter.json`）へ置きます。
+`spotter runtime-errors report`を実行し、継続時はlaunchd、systemd user timer、Windows Task Schedulerで
+同じコマンドを1時間に1回起動します。未受領だけを送信し、署名を検証した200応答だけでackします。
+配布物の`ops/runtime-reporting/`にlaunchdとsystemd user timerの雛形があります。
+`REPLACE_WITH_ABSOLUTE_SPOTTER_PATH`を導入済みCLIの絶対pathへ替えてから登録します。
+Windowsでは同じ利用者のTask Schedulerへ`spotter.cmd runtime-errors report`を1時間ごとに登録します。
+422が返った版は再送を止め、修正版を導入すると再試行します。無効化は`reporting.enabled`を`false`にします。
+401/403で拒まれた合鍵は入れ替わるまで再送を止めます。時計ずれはackせず、時刻修正後に再試行します。
 
 Primary auditor backend policy: Claude hooks の auto selection は PATH に Codex CLI があれば Codex CLI、
 なければ Haiku compatibility path。Codex native hooks の auto selection は Codex CLI です。

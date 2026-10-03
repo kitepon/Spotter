@@ -14,13 +14,14 @@ async function main() {
     process.exit(2);
   }
   const allowed = action === 'observe'
-    ? new Set(['configPath', 'storePath', 'productVersion', 'platform', 'arch', 'beforeOpenDelayMs', 'observationId'])
-    : new Set(['configPath', 'storePath', 'productVersion', 'platform', 'arch', 'observationId', 'expectedFingerprint', 'waitMs']);
+    ? new Set(['configPath', 'productConfigPath', 'storePath', 'productVersion', 'platform', 'arch', 'beforeOpenDelayMs', 'observationId'])
+    : new Set(['configPath', 'productConfigPath', 'storePath', 'productVersion', 'platform', 'arch', 'observationId', 'expectedFingerprint', 'waitMs']);
   const required = new Set(['configPath', 'storePath', 'productVersion', 'platform', 'arch', 'observationId']);
   if (!options || typeof options !== 'object' || Array.isArray(options)
     || Object.keys(options).some((key) => !allowed.has(key))
     || [...required].some((key) => !Object.hasOwn(options, key))
     || (options.configPath !== null && (typeof options.configPath !== 'string' || options.configPath.length > 4_096))
+    || ('productConfigPath' in options && (typeof options.productConfigPath !== 'string' || options.productConfigPath.length < 1 || options.productConfigPath.length > 4_096))
     || typeof options.storePath !== 'string' || options.storePath.length < 1 || options.storePath.length > 4_096
     || typeof options.productVersion !== 'string' || options.productVersion.length < 1 || options.productVersion.length > 64
     || typeof options.platform !== 'string' || !/^[a-z0-9_-]{1,32}$/.test(options.platform)

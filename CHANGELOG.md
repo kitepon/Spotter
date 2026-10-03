@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- Spotter自身が端末内runtime-errorの累計をBugHubへ送るopt-in CLIを追加。署名済み受領だけでackし、既定では通信しない。
 - Jev監査の大きなtool catalogを入力上限内のリクエストへ分け、全候補の判定とtoken usageを統合する。
   上限超過のHTTP 400で監査が止まる問題を修正し、途中の失敗は部分的なpassへ変換しない。
 

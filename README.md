@@ -21,8 +21,8 @@ This repository owns the complete Spotter product surface: auditor behavior,
 Claude/Codex/Cursor/Grok hook adapters, project markers, catalog discovery and host-local
 tool databases, evaluation storage, dashboard servers, diagnostics, installers,
 and release packaging. [dotagents](https://github.com/kitepon/dotagents)
-owns shared agent instructions and the optional factory-reporter configuration
-that enables Spotter's local runtime-error aggregate; it does not own Spotter's
+owns shared agent instructions and an optional legacy factory-reporter configuration
+for local collection; Spotter owns its product runtime-error reporting; dotagents does not own Spotter's
 catalog or host integration. MarkItDown is a separate third-party CLI.
 
 Claude has a structural blind spot: **it can't reach for a tool it doesn't realize it needs**. It may skip a project memory MCP when a decision should be recorded, answer from stale memory instead of a docs-lookup MCP, or reason about UI state without a browser-automation MCP. The model can't always tell when it doesn't know — so the tool stays unused.
@@ -305,17 +305,18 @@ otherwise the Haiku-compatible path. Codex native hooks automatically select Cod
 error aggregate は collection が既定OFFです。npm `latest`、tag / GitHub Release、
 公開CI、registry由来installを確認済みです。
 
-Spotter collects fixed-code runtime failures only when the canonical dotagents factory reporter
-configuration contains the JSON boolean `collection.enabled: true`. Missing, malformed, and disabled
-configuration all fail closed. Collection is local-only: Spotter has no reporting credential or network
-transport code. The owner-private atomic store contains only fixed templates and allow-listed aggregates;
+Spotter collects fixed-code runtime failures when its owner-private product config contains
+`collection.enabled: true`. If that config is absent, the old canonical dotagents factory reporter
+config remains a collection-only compatibility input. Malformed or disabled product config fails closed.
+Reporting is independently opt-in with `reporting.enabled: true`; the default makes no network request.
+The owner-private atomic store contains only fixed templates and allow-listed aggregates;
 raw exceptions, stdout/stderr, stacks, prompts, hook payloads, findings, file contents, and absolute paths
 are not accepted by its API.
 
 Daemon and direct Codex-hook owner boundaries perform collection in a killable child-process group with
-a bounded timeout. A blocked FIFO or descendant therefore cannot stall the hook or daemon. HTTP reporting
-metadata, when present in the shared config, is accepted only when `new URL(value).href === value` and the
-scheme is HTTP(S); Spotter still neither reads credentials nor sends the aggregate anywhere.
+a bounded timeout. A blocked FIFO or descendant therefore cannot stall the hook or daemon. The product
+report command reads only Spotter's opt-in config and the owner-private BugHub credential, never factory
+reporting metadata. It sends only fixed aggregate fields to the configured owner-LAN BugHub endpoint.
 
 On POSIX, every config/store read revalidates the current uid and exact `0600` file / `0700` directory
 modes. Store mutations use a private SQLite `BEGIN IMMEDIATE` mutex that the OS releases on process crash;
@@ -330,6 +331,27 @@ and `spotter diagnostics factory` include only bounded store counts/status, neve
 or record payload. Programmatic consumers can import `readRuntimeErrorSnapshot`,
 `acknowledgeRuntimeErrors`, `resolveRuntimeError`, `reopenRuntimeError`, and `compactRuntimeErrors`.
 Acknowledgement is monotonic, and compaction never removes an unacknowledged record.
+
+To enable owner-LAN reporting on one terminal, create the following `0600` owner-owned regular file
+at `~/.config/spotter/runtime-errors.json` (Windows: `%LOCALAPPDATA%\Spotter\runtime-errors-config.json`):
+
+```json
+{"schema_version":"1.0","collection":{"enabled":true},"reporting":{"enabled":true}}
+```
+
+BugHub's operator supplies a separate `0600` credential at
+`~/.config/bughub/product-credentials/spotter.json` (Windows:
+`%LOCALAPPDATA%\bughub\product-credentials\spotter.json`). Run `spotter runtime-errors report`
+once, then schedule the same command hourly with launchd, a systemd user timer, or Windows Task Scheduler.
+The package includes launchd and systemd templates in `ops/runtime-reporting/`; replace
+`REPLACE_WITH_ABSOLUTE_SPOTTER_PATH` with the installed CLI path before registering them. On Windows,
+register an hourly task for the installed `spotter.cmd runtime-errors report` under the same user account.
+Only unacknowledged records are sent. A signed 200 response advances the cursor; timeout, 5xx, or an
+unverified response leaves it pending. A 422 blocks further sends for that installed version until a
+corrected Spotter version is installed; the block marker is under the private `~/.spotter` state directory
+(Windows: `%LOCALAPPDATA%\Spotter`). A rejected 401/403 credential is paused until it is rotated;
+clock-skew responses leave the cursor pending for a later attempt. Disable reporting by changing
+`reporting.enabled` to `false`.
 The Codex SessionStart hook refreshes `.spotter/tool-db.codex.json` in the background
 without touching the Claude DB.
 Codex CLI auditor child processes use a versioned product policy. The production selection is
