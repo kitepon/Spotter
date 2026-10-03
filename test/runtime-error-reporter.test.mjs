@@ -156,6 +156,11 @@ test('product config and credential require owner-private regular files', { skip
   await writeFile(credentialPath, JSON.stringify({ url: 'http://192.168.1.2:39310/api/products/v1/runtime-errors', key_id: 'k1', secret }), { mode: 0o600 });
   assert.equal((await readRuntimeReportConfig({ productConfigPath })).reportingEnabled, true);
   assert.equal((await readRuntimeReportCredential({ credentialPath })).key_id, 'k1');
+  await writeFile(credentialPath, JSON.stringify({
+    url: 'http://192.168.1.2:39310/api/products/v1/runtime-errors',
+    key_id: 'spotter:mac-kite', secret: 'x'.repeat(1024),
+  }));
+  assert.equal((await readRuntimeReportCredential({ credentialPath })).secret.length, 1024);
   assert.deepEqual(await readRuntimeCollectionMode({ productConfigPath }), { mode: 'enabled', enabled: true });
   await writeFile(productConfigPath, JSON.stringify({ schema_version: '1.0', collection: { enabled: false }, reporting: { enabled: true } }));
   assert.deepEqual(await readRuntimeCollectionMode({ productConfigPath }), { mode: 'disabled', enabled: false });
@@ -204,8 +209,8 @@ test('Windows owner-private product config and credential survive ACL readback',
     schema_version: '1.0', collection: { enabled: true }, reporting: { enabled: true },
   }));
   await writeOwnerPrivateFile(credentialPath, JSON.stringify({
-    url: 'http://192.168.1.2:39310/api/products/v1/runtime-errors', key_id: 'k1', secret,
+    url: 'http://192.168.1.2:39310/api/products/v1/runtime-errors', key_id: 'spotter:fox', secret,
   }));
   assert.equal((await readRuntimeReportConfig({ productConfigPath })).reportingEnabled, true);
-  assert.equal((await readRuntimeReportCredential({ credentialPath })).key_id, 'k1');
+  assert.equal((await readRuntimeReportCredential({ credentialPath })).key_id, 'spotter:fox');
 });

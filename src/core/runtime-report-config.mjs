@@ -45,8 +45,8 @@ export async function readRuntimeReportCredential(options = {}) {
   const value = JSON.parse(await readOwnerPrivateFile(path, options));
   if (!exactKeys(value, ['url', 'key_id', 'secret'])
     || value.url !== BUGHUB_RUNTIME_ERROR_URL
-    || typeof value.key_id !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(value.key_id)
-    || typeof value.secret !== 'string' || value.secret.length < 1 || value.secret.length > 512) {
+    || typeof value.key_id !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(value.key_id)
+    || typeof value.secret !== 'string' || value.secret.length < 16 || value.secret.length > 1024) {
     throw new Error('invalid runtime report credential');
   }
   return value;

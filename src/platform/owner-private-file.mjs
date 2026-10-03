@@ -30,11 +30,13 @@ function checkWindowsOwnerAcl(path) {
   const script = [
     '$ErrorActionPreference = "Stop"',
     '$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
+    '$admins = "S-1-5-32-544"',
+    '$system = "S-1-5-18"',
     '$acl = Get-Acl -LiteralPath $env:SPOTTER_PRIVATE_FILE',
     '$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value',
     '$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))',
-    '$unsafe = @($rules | Where-Object { $_.AccessControlType -eq "Allow" -and $_.IdentityReference.Value -ne $sid })',
-    'if ($owner -ne $sid -or $unsafe.Count -gt 0) { exit 7 }',
+    '$unsafe = @($rules | Where-Object { $_.AccessControlType -eq "Allow" -and @($sid, $admins, $system) -notcontains $_.IdentityReference.Value })',
+    'if (@($sid, $admins) -notcontains $owner -or $unsafe.Count -gt 0) { exit 7 }',
   ].join('; ');
   return runPowerShellFileScript(path, script);
 }
