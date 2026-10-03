@@ -3,6 +3,11 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## Unreleased
+
+- Jev監査の大きなtool catalogを入力上限内のリクエストへ分け、全候補の判定とtoken usageを統合する。
+  上限超過のHTTP 400で監査が止まる問題を修正し、途中の失敗は部分的なpassへ変換しない。
+
 ## 1.8.0 — 2026-09-27
 
 - Grok Buildのnative hookとhost専用カタログを追加。Linux、macOS、Windows nativeの実セッションで入力時・応答後の監査を確認した。Grok 1.0.41は受動hookのstdoutを会話へ渡さないため、findingは構造eventと評価DBに記録する。
