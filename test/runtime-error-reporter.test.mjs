@@ -12,6 +12,7 @@ import {
 import {
   observeRuntimeError, readRuntimeCollectionMode, readRuntimeErrorStoreStatus, resolveRuntimeError,
 } from '../src/core/runtime-error-store.mjs';
+import { writeOwnerPrivateFile } from '../src/platform/owner-private-file.mjs';
 
 const secret = 'bughub-test-secret-do-not-use-0123456789abcdef';
 const reportId = '00000000-0000-4000-8000-000000000001';
@@ -192,4 +193,19 @@ test('product-owned opt-in collection flows through signed send and store acknow
   });
   assert.equal(result.status, 'accepted');
   assert.equal((await readRuntimeErrorStoreStatus(storeOptions)).unacknowledged, 0);
+});
+
+test('Windows owner-private product config and credential survive ACL readback', { skip: process.platform !== 'win32' }, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'spotter-report-windows-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const productConfigPath = join(root, 'runtime-errors.json');
+  const credentialPath = join(root, 'spotter.json');
+  await writeOwnerPrivateFile(productConfigPath, JSON.stringify({
+    schema_version: '1.0', collection: { enabled: true }, reporting: { enabled: true },
+  }));
+  await writeOwnerPrivateFile(credentialPath, JSON.stringify({
+    url: 'http://192.168.1.2:39310/api/products/v1/runtime-errors', key_id: 'k1', secret,
+  }));
+  assert.equal((await readRuntimeReportConfig({ productConfigPath })).reportingEnabled, true);
+  assert.equal((await readRuntimeReportCredential({ credentialPath })).key_id, 'k1');
 });
