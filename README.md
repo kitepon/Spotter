@@ -343,9 +343,14 @@ BugHub's operator supplies a separate `0600` credential at
 `~/.config/bughub/product-credentials/spotter.json` (Windows:
 `%LOCALAPPDATA%\bughub\product-credentials\spotter.json`). Run `spotter runtime-errors report`
 once, then schedule the same command hourly with launchd, a systemd user timer, or Windows Task Scheduler.
-The package includes launchd and systemd templates in `ops/runtime-reporting/`; replace
-`REPLACE_WITH_ABSOLUTE_SPOTTER_PATH` with the installed CLI path before registering them. On Windows,
-register an hourly task for the installed `spotter.cmd runtime-errors report` under the same user account.
+The package includes launchd and systemd templates in `ops/runtime-reporting/`. Before registering them,
+replace `REPLACE_WITH_ABSOLUTE_NODE_PATH` with the Node.js binary that installed Spotter (`command -v node`)
+and `REPLACE_WITH_ABSOLUTE_SPOTTER_SCRIPT_PATH` with the installed `claude-spotter/bin/spotter.mjs`
+(`realpath "$(command -v spotter)"`). The templates start Node directly because a service manager does not
+read the login shell's PATH: launchd's default PATH has no Homebrew or nvm directory, so the CLI's
+`env node` shebang fails there, and a systemd user unit may resolve a different system Node. On Windows,
+run `ops\runtime-reporting\windows\install-runtime-errors-task.ps1` from the installed package as the
+same user; it registers the hourly `spotter-runtime-errors` task with a hidden console window.
 Only unacknowledged records are sent. A signed 200 response advances the cursor; timeout, 5xx, or an
 unverified response leaves it pending. A 422 blocks further sends for that installed version until a
 corrected Spotter version is installed; the block marker is under the private `~/.spotter` state directory

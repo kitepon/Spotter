@@ -314,8 +314,13 @@ BugHub担当が別途、端末ごとの合鍵を`~/.config/bughub/product-creden
 `spotter runtime-errors report`を実行し、継続時はlaunchd、systemd user timer、Windows Task Schedulerで
 同じコマンドを1時間に1回起動します。未受領だけを送信し、署名を検証した200応答だけでackします。
 配布物の`ops/runtime-reporting/`にlaunchdとsystemd user timerの雛形があります。
-`REPLACE_WITH_ABSOLUTE_SPOTTER_PATH`を導入済みCLIの絶対pathへ替えてから登録します。
-Windowsでは同じ利用者のTask Schedulerへ`spotter.cmd runtime-errors report`を1時間ごとに登録します。
+登録前に、`REPLACE_WITH_ABSOLUTE_NODE_PATH`をSpotterを導入したNode.jsの絶対path（`command -v node`）へ、
+`REPLACE_WITH_ABSOLUTE_SPOTTER_SCRIPT_PATH`を導入済みの`claude-spotter/bin/spotter.mjs`の絶対path
+（`realpath "$(command -v spotter)"`）へ替えます。service managerはlogin shellのPATHを読みません。
+launchdの既定PATHにはHomebrewやnvmのdirectoryが無く、CLIの`env node` shebangは起動に失敗します。
+systemd user unitは別のsystem Nodeを選ぶことがあります。そのため雛形はNodeを直接起動します。
+Windowsでは同じ利用者で、導入済みpackageの`ops\runtime-reporting\windows\install-runtime-errors-task.ps1`を
+実行します。1時間ごとの`spotter-runtime-errors` taskを、console windowを隠して登録します。
 422が返った版は再送を止め、修正版を導入すると再試行します。無効化は`reporting.enabled`を`false`にします。
 401/403で拒まれた合鍵は入れ替わるまで再送を止めます。時計ずれはackせず、時刻修正後に再試行します。
 

@@ -3,4 +3,4 @@ Description=Send pending Spotter runtime errors to owner-LAN BugHub
 
 [Service]
 Type=oneshot
-ExecStart=REPLACE_WITH_ABSOLUTE_SPOTTER_PATH runtime-errors report
+ExecStart=REPLACE_WITH_ABSOLUTE_NODE_PATH REPLACE_WITH_ABSOLUTE_SPOTTER_SCRIPT_PATH runtime-errors report
