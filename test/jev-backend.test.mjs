@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAuditorBackend, selectAuditorBackend } from '../src/core/auditor-backend.mjs';
-import { createJevAuditorBackend, resolveJevApiKey, JEV_MODEL } from '../src/core/jev-backend.mjs';
+import { createJevAuditorBackend, resolveJevApiKey, JEV_MODEL, JEV_REQUEST_MAX_BYTES } from '../src/core/jev-backend.mjs';
 import { projectBackendFailure } from '../src/hooks/parent-output-projector.mjs';
 import { createCodexCliAuditorBackend } from '../src/core/codex-cli-backend.mjs';
 import { createHaikuAuditorBackend } from '../src/core/auditor-backend.mjs';
@@ -66,6 +66,41 @@ test('複数ツールを一括判定し、本文・カタログ以外の履歴�
   assert.equal(result.findings.length, 2);
   assert.equal(result.pass, false);
   assert.deepEqual(result.meta.diagnostics.tokenUsage, { inputTokens: 120, outputTokens: 8 });
+});
+
+test('大きなcatalogは入力上限内で分割し、全候補の判定とusageを統合する', async () => {
+  const largeCatalog = Array.from({ length: 180 }, (_, index) => ({
+    name: `tool_${index}`, description: `追加ツール${index}: ${'説明'.repeat(90)}`,
+  }));
+  const seen = [];
+  let calls = 0;
+  const auditor = createJevAuditorBackend({ env, catalog: largeCatalog, fetchFn: async (_, options) => {
+    calls++;
+    assert.ok(Buffer.byteLength(options.body) <= JEV_REQUEST_MAX_BYTES);
+    const questions = JSON.parse(options.body).questions;
+    const tools = Object.values(questions).map((question) => question.instructions.tool.name);
+    seen.push(...tools);
+    return reply(tools.map((name) => ['tool_0', 'tool_179'].includes(name) ? 0.9 : 0.1));
+  } });
+  const result = await auditor.judge({ stage: 'user_input', userInput: '候補を調べて' });
+  assert.ok(calls > 1);
+  assert.deepEqual(seen, largeCatalog.map((tool) => tool.name));
+  assert.deepEqual(result.findings.map((finding) => finding.toolName), ['tool_0', 'tool_179']);
+  assert.deepEqual(result.meta.diagnostics.tokenUsage, { inputTokens: 120 * calls, outputTokens: 8 * calls });
+});
+
+test('後続batchの失敗を部分的なpassへ変換しない', async () => {
+  const largeCatalog = Array.from({ length: 100 }, (_, index) => ({
+    name: `tool_${index}`, description: '説明'.repeat(100),
+  }));
+  let calls = 0;
+  const auditor = createJevAuditorBackend({ env, catalog: largeCatalog, fetchFn: async (_, options) => {
+    calls++;
+    return calls === 1 ? reply(Object.keys(JSON.parse(options.body).questions).map(() => 0.1))
+      : { ok: false, status: 529 };
+  } });
+  await assert.rejects(auditor.judge({ stage: 'user_input', userInput: '候補を調べて' }), { code: 'E_JEV_HTTP' });
+  assert.equal(calls, 2);
 });
 
 test('Stopは使用済みツールを除外し、候補ゼロなら外部呼出しを行わない', async () => {

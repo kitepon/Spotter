@@ -379,8 +379,10 @@ runtime で失敗しても、別 backend へ silent retry しない。
 より優先するのはJev未設定時だけである。unavailable / timeout / schema invalid / non-zero exit は `AuditorBackendError` として
 表面化する。
 
-Jevのmodel正本は`src/core/jev-backend.mjs`の`JEV_MODEL`。短い質問による候補ごとのNoul判定を1 HTTP requestへ
-まとめ、肯定確率が0.5を超えた候補のcatalog IDから共通judgmentを作る。確率は有限な0〜1だけを受理する。
+Jevのmodel正本は`src/core/jev-backend.mjs`の`JEV_MODEL`。短い質問による候補ごとのNoul判定を
+32 KiB以下のHTTP requestへ順にまとめ、全候補の応答が揃ってから共通judgmentを作る。
+一つでも失敗すれば部分的な判定を返さず、呼出し全体のtimeoutを適用する。
+肯定確率が0.5を超えた候補のcatalog IDだけを提案し、確率は有限な0〜1だけを受理する。
 提案の採用・実行は親AIが判断する。同機能ツールの重複だけを理由に候補を抑制しない。
 UserPromptSubmitは現在のrequestだけ、Stopは
 final responseを入力にし、使用済みtoolを候補から除外する。自由文は生成させない。
