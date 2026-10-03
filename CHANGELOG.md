@@ -3,7 +3,7 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
-## Unreleased
+## 1.9.0 — 2026-10-03
 
 - Spotter自身が端末内runtime-errorの累計をBugHubへ送るopt-in CLIを追加。署名済み受領だけでackし、既定では通信しない。
 
