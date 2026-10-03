@@ -3,6 +3,12 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.1 — 2026-10-03
+
+- runtime-error定期送信のlaunchd／systemd雛形を、NodeとCLI本体を絶対pathで起動する形へ修正。launchdの既定PATHにNodeが無く
+  `env node` shebangがexit 127で失敗する問題と、systemd user unitが導入時と異なるsystem Nodeを選ぶ問題を解消する。
+- Windows Task Schedulerへ1時間ごとの送信taskをconsole非表示で登録するinstallerを追加。
+
 ## 1.9.0 — 2026-10-03
 
 - Spotter自身が端末内runtime-errorの累計をBugHubへ送るopt-in CLIを追加。署名済み受領だけでackし、既定では通信しない。
