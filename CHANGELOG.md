@@ -3,6 +3,12 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.2 — 2026-10-06
+
+- daemonが起動直後にsessionのcwdを離れ、`~/.spotter`へ移る。hostが`SessionEnd`を実行せずに終わると、
+  daemonはheartbeat timeout（最後のhook eventから30分）まで残る。Windowsではその間、daemonがcwdとして
+  持つsessionの作業directoryを削除できなかった。heartbeatとhook、監査の動作は変えていない。
+
 ## 1.9.1 — 2026-10-03
 
 - runtime-error定期送信のlaunchd／systemd雛形を、NodeとCLI本体を絶対pathで起動する形へ修正。launchdの既定PATHにNodeが無く
