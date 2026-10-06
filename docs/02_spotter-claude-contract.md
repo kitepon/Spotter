@@ -234,6 +234,12 @@ Recursive hook / daemon proliferation must stay blocked by:
 Lifecycle cleanup uses heartbeat + `UserPromptSubmit` auto-resurrect. Do not restore
 `process.ppid` parent-watch cleanup.
 
+When the host exits without running `SessionEnd`, the daemon stays alive until the heartbeat
+timeout (30 minutes after its last hook event). At startup it leaves the session's cwd for
+`~/.spotter`, so the session directory can be removed while the daemon is still alive (Windows
+refuses to delete a directory held as a process cwd). A failed move is written to the daemon log
+as `cwd release failed` and the daemon keeps running.
+
 ## IPC Contract
 
 Hook to daemon transport is newline-delimited JSON over a Unix socket / Windows named pipe.
@@ -416,6 +422,7 @@ quota を含む invocation failure で別 model へ fallback しない。`spotte
 - `test/hooks.test.mjs`: hook wording, marker gate, child/subagent/non-startup gates.
 - `test/haiku-caller.test.mjs`: prompt builders, catalog-only rule, parse/filter schema.
 - `test/daemon.test.mjs`: daemon event behavior, heartbeat, role-collapse recovery, call window.
+- `test/daemon-cwd.test.mjs`: the started daemon leaves the session cwd; a failed move is logged.
 - `test/judgment.test.mjs`: neutral finding / judgment schema and Claude legacy projection.
 - `test/codex-hook-cmd.test.mjs`: canonical hook generation / upgrade ownership、readiness、
   Stop structured event、legacy pending cleanup、bounded current-turn transcript integration。
