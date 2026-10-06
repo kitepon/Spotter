@@ -2,7 +2,7 @@
 
 import { startDaemon, DaemonAlreadyRunningError } from '../daemon/daemon.mjs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { open } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
 import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
@@ -21,16 +21,33 @@ function parseArgs(argv) {
   return out;
 }
 
+// The hook spawns the daemon detached, so it starts in the session's cwd. Windows
+// refuses to delete a directory while any process has it as cwd, and after an
+// unclean host exit the daemon lives on until the heartbeat timeout. The daemon
+// passes an explicit cwd to every child and never reads its own, so it moves to
+// Spotter's state directory. A failed move is logged and does not stop the daemon.
+export function leaveSessionCwd({ target, chdir = process.chdir, log }) {
+  try {
+    chdir(target);
+  } catch (err) {
+    log(`cwd release failed (target=${target}): ${err.message}`);
+    return false;
+  }
+  return true;
+}
+
 export async function runDaemonStart({ argv }) {
-  const { sessionId, projectRoot } = parseArgs(argv);
+  const { sessionId, projectRoot: projectRootArg } = parseArgs(argv);
   if (!sessionId) {
     process.stderr.write('spotter daemon start: --session-id is required\n');
     process.exit(2);
   }
-  if (!projectRoot) {
+  if (!projectRootArg) {
     process.stderr.write('spotter daemon start: --project-root is required (the path containing .spotter/marker.json)\n');
     process.exit(2);
   }
+  // Resolved before the cwd changes below, so a relative argument keeps its meaning.
+  const projectRoot = resolve(projectRootArg);
 
   const logFilePath = join(homedir(), '.spotter', 'logs', `daemon-${sessionId}.log`);
 
@@ -62,6 +79,8 @@ export async function runDaemonStart({ argv }) {
     const line = `[${new Date().toISOString()}] ${msg}\n`;
     logFile.write(line).catch(() => {});
   };
+
+  leaveSessionCwd({ target: join(homedir(), '.spotter'), log });
 
   let running;
   try {
