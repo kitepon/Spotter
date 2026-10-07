@@ -3,6 +3,21 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.3 — 2026-10-07
+
+- 監査backendへ届かない・応じてもらえない失敗（network、timeout、認証、利用上限、5xx）を、1回ごとに
+  runtime errorへ登録しない。Spotterは固定の通知を出し、親のturnと入力を保ち、次の監査で再試行する。
+  1回の失敗はhook eventとdaemon logに残り、backendごとの連続失敗として`auditor-availability-v1.json`に持つ。
+  完了した監査が挟まらないまま30分以上続いた時だけ、`SPOTTER.AUDITOR.UNRECOVERED`（`high`）を
+  障害1件につき1回登録する。原因は決めつけない。それ以外の監査失敗は従来どおり毎回
+  `SPOTTER.AUDITOR.UNAVAILABLE`（`warn`）へ登録する。BugHubへ送る項目は変えていない。
+- 重大度を、止まる範囲と復帰の有無に合わせた。sessionまたはbackendの監査が止まり復帰が観測されない物は
+  `high`、影響が監査1回・hookの要求1回までの物は`warn`。入力・会話・結果の喪失と二重実行はどの種類にも無い。
+- hookとの接続1本の障害を、daemonが待ち受けられない失敗（`SPOTTER.DAEMON.TRANSPORT`、`high`）から分け、
+  `SPOTTER.DAEMON.CONNECTION`（`warn`）として登録する。daemonは他の接続を処理し続ける。
+- `SPOTTER.AUDITOR.UNRECOVERED`または`SPOTTER.DAEMON.CONNECTION`の記録を持つstoreは、1.9.2以前のSpotterでは
+  読めない（未知の記録として拒否する）。
+
 ## 1.9.2 — 2026-10-06
 
 - daemonが起動直後にsessionのcwdを離れ、`~/.spotter`へ移る。hostが`SessionEnd`を実行せずに終わると、
