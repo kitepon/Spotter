@@ -832,6 +832,7 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
   const out = [];
   const errOut = [];
   const observations = [];
+  const availability = [];
   try {
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
@@ -855,6 +856,7 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
       writeOutput: (text) => out.push(text),
       writeError: (text) => errOut.push(text),
       runtimeErrorObserver: async (kind) => observations.push(kind),
+      auditorAvailabilityObserver: async (input) => availability.push(input),
     });
 
     const parsed = JSON.parse(out.join(''));
@@ -862,7 +864,9 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
     assert.match(errOut.join(''), /利用上限/);
     assert.doesNotMatch(out.join('') + errOut.join(''), /usage limit reached|You've hit your usage limit/);
     assert.equal(parsed.hookSpecificOutput, undefined);
-    assert.deepEqual(observations, ['auditor_unavailable']);
+    // A handled backend access failure is tracked for recovery, not registered.
+    assert.deepEqual(observations, []);
+    assert.deepEqual(availability, [{ outcome: 'failure', backend: 'codex-cli' }]);
   } finally {
     await rm(project, { recursive: true, force: true });
   }
@@ -1099,6 +1103,7 @@ test('runCodexStopHook: backend error is fixed diagnostics and is not delivered 
   const stopErr = [];
   const userOut = [];
   const observations = [];
+  const availability = [];
   const longFinalResponse = 'GPU について断定しました。'.repeat(20);
   try {
     await runCodexStopHook({
@@ -1120,12 +1125,14 @@ test('runCodexStopHook: backend error is fixed diagnostics and is not delivered 
       writeOutput: (text) => stopOut.push(text),
       writeError: (text) => stopErr.push(text),
       runtimeErrorObserver: async (kind) => observations.push(kind),
+      auditorAvailabilityObserver: async (input) => availability.push(input),
     });
 
     assert.match(JSON.parse(stopOut.join('')).systemMessage, /時間内に完了しなかった/);
     assert.match(stopErr.join(''), /時間内に完了しなかった/);
     assert.doesNotMatch(stopOut.join('') + stopErr.join(''), /codex-cli did not respond|E_CODEX_CLI_TIMEOUT/);
-    assert.deepEqual(observations, ['auditor_unavailable']);
+    assert.deepEqual(observations, []);
+    assert.deepEqual(availability, [{ outcome: 'failure', backend: 'codex-cli' }]);
 
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({
@@ -1139,9 +1146,91 @@ test('runCodexStopHook: backend error is fixed diagnostics and is not delivered 
         judge: async () => ({ pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } }),
       }),
       writeOutput: (text) => userOut.push(text),
+      auditorAvailabilityObserver: async (input) => availability.push(input),
     });
 
     assert.deepEqual(userOut, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('Codex hooks: a failure outside backend access is still registered at once', async () => {
+  const project = await makeProject();
+  const observations = [];
+  const availability = [];
+  try {
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'codex-immediate-lane',
+        transcript_path: '/tmp/codex-immediate-lane.jsonl',
+        prompt: 'GeForce 5000 番台について既知の罠を調べて',
+      }),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+      createAuditorBackendFn: () => ({
+        name: 'codex-cli',
+        judge: async () => {
+          throw new AuditorBackendError('E_CODEX_CLI_EXIT', 'codex-cli exited with code 1', { backend: 'codex-cli' });
+        },
+      }),
+      writeOutput: () => {},
+      writeError: () => {},
+      runtimeErrorObserver: async (kind) => observations.push(kind),
+      auditorAvailabilityObserver: async (input) => availability.push(input),
+    });
+
+    assert.deepEqual(observations, ['auditor_unavailable']);
+    assert.deepEqual(availability, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('Codex hooks: a completed audit reports the recovery from both hooks', async () => {
+  const project = await makeProject();
+  const observations = [];
+  const availability = [];
+  const backend = () => ({
+    name: 'codex-cli',
+    judge: async () => ({ pass: true, findings: [], anomalies: [], meta: { backend: 'codex-cli' } }),
+  });
+  try {
+    await runCodexUserPromptSubmitHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'codex-recovery',
+        transcript_path: '/tmp/codex-recovery.jsonl',
+        prompt: 'GeForce 5000 番台について既知の罠を調べて',
+      }),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+      createAuditorBackendFn: backend,
+      writeOutput: () => {},
+      writeError: () => {},
+      runtimeErrorObserver: async (kind) => observations.push(kind),
+      auditorAvailabilityObserver: async (input) => availability.push(input),
+    });
+    await runCodexStopHook({
+      readInput: async () => ({
+        cwd: project,
+        session_id: 'codex-recovery',
+        transcript_path: '/tmp/transcript.jsonl',
+        last_assistant_message: 'GPU について断定しました。'.repeat(20),
+      }),
+      readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+      readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
+      createAuditorBackendFn: backend,
+      writeOutput: () => {},
+      writeError: () => {},
+      runtimeErrorObserver: async (kind) => observations.push(kind),
+      auditorAvailabilityObserver: async (input) => availability.push(input),
+    });
+
+    assert.deepEqual(observations, []);
+    assert.deepEqual(availability, [
+      { outcome: 'success', backend: 'codex-cli' },
+      { outcome: 'success', backend: 'codex-cli' },
+    ]);
   } finally {
     await rm(project, { recursive: true, force: true });
   }

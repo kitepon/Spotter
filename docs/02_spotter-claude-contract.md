@@ -329,10 +329,42 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   performs no network I/O and accepts only fixed Spotter
   failure kinds; code, template, component, and severity come from a closed registry rather than
   exception/provider/hook input. Fingerprints use the factory-v1 canonical SHA-256 sequence.
-- The daemon owns transport and PID-state persistence observations. The daemon owns Claude primary
+- The daemon owns transport, connection and PID-state persistence observations. The daemon owns Claude primary
   auditor failures, while the direct Codex hook owns its own primary auditor/context availability
   failure. Claude hook adapters do not count daemon failures again. Store failures are non-blocking
   and emit only `spotter-runtime-errors: local aggregate store unavailable` on stderr.
+- Auditor failures register through two lanes. A failure to reach or be served by the external
+  backend (`E_JEV_NETWORK`, `E_JEV_TIMEOUT`, `E_JEV_AUTH`, `E_JEV_USAGE_LIMIT`, `E_JEV_HTTP` with
+  status 500 or above, `E_CODEX_CLI_TIMEOUT`, `E_CODEX_CLI_AUTH`, `E_CODEX_CLI_USAGE_LIMIT`,
+  `E_HAIKU_TIMEOUT`) is a handled condition: the fixed notice is shown, the parent turn and the
+  user's input are kept, no other backend is tried, and the next audit runs normally. One such
+  failure stays in the hook-event and daemon logs and opens a per-backend streak in
+  `auditor-availability-v1.json` beside the store. A completed audit by that backend ends the
+  streak and removes its entry. When a failure arrives 30 minutes or more after the streak began
+  with no completed audit in between, `SPOTTER.AUDITOR.UNRECOVERED` is registered once for that
+  outage; its count is outages, not failed audits. Every other auditor failure registers
+  `SPOTTER.AUDITOR.UNAVAILABLE` on each occurrence. The lane decides only when to register. Neither
+  record says whether the product or the environment is at fault, and both stay open until an
+  operator resolves them.
+- Severity follows what stops, what is lost and whether it comes back, not the error value. No
+  kind loses the user's input, conversation or results, and none runs anything twice, so none is
+  `fatal`. `high` means audits are stopped across a whole session or backend and no recovery is
+  observed; `warn` means at most one audit or one hook request is affected and the next one runs
+  normally.
+  - `SPOTTER.DAEMON.TRANSPORT` and `SPOTTER.DAEMON.PERSISTENCE` (`high`): the daemon cannot listen
+    or cannot write its PID file, so it exits. Every UserPromptSubmit and Stop audit of that Claude
+    session and its tool-usage aggregation are missing from the first prompt. UserPromptSubmit shows
+    the fixed notice and exits 0, Stop stays non-blocking and PreToolUse allows the tool. Each
+    UserPromptSubmit retries the start and waits up to 3 s for readiness; it succeeds only once the
+    cause on the terminal is gone. `TRANSPORT` is also registered for an error of the listening
+    server after start; there the daemon keeps running and the extent is not determined at the
+    registration site.
+  - `SPOTTER.AUDITOR.UNRECOVERED` (`high`): every audit through that backend on the terminal has
+    been missing for 30 minutes or more with no completed audit.
+  - `SPOTTER.AUDITOR.UNAVAILABLE` (`warn`): one audit failed for a reason other than backend access.
+  - `SPOTTER.DAEMON.CONNECTION` (`warn`): a fault on one live hook connection. The daemon keeps
+    serving and the next request opens a new connection. A hook that is cancelled or killed before
+    the reply does not raise it on Linux, macOS or Windows.
 - Production owner boundaries isolate collection in a bounded, killable child-process group. Timeout
   terminates the worker and its descendants, so FIFO/device I/O cannot indefinitely block a hook or daemon.
   Optional reporter endpoints are valid only when the exact input equals `new URL(input).href`, uses
@@ -423,6 +455,8 @@ quota を含む invocation failure で別 model へ fallback しない。`spotte
 - `test/haiku-caller.test.mjs`: prompt builders, catalog-only rule, parse/filter schema.
 - `test/daemon.test.mjs`: daemon event behavior, heartbeat, role-collapse recovery, call window.
 - `test/daemon-cwd.test.mjs`: the started daemon leaves the session cwd; a failed move is logged.
+- `test/auditor-availability.test.mjs`: auditor failure lanes, the per-backend recovery streak, and
+  once-per-outage registration of the unrecovered record.
 - `test/judgment.test.mjs`: neutral finding / judgment schema and Claude legacy projection.
 - `test/codex-hook-cmd.test.mjs`: canonical hook generation / upgrade ownership、readiness、
   Stop structured event、legacy pending cleanup、bounded current-turn transcript integration。

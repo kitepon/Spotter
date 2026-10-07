@@ -535,8 +535,9 @@ test('startDaemon: auditor failure is collected once at the daemon owner boundar
   const { dir, tools } = await setupCatalog();
   const sessionId = `runtime-auditor-${randomUUID()}`;
   const observations = [];
+  const availability = [];
   const haikuCaller = async () => {
-    throw new HaikuError('E_HAIKU_TIMEOUT', 'SENTINEL_PROVIDER_FAILURE');
+    throw new HaikuError('E_INTERNAL', 'SENTINEL_PROVIDER_FAILURE');
   };
   haikuCaller.reset = () => {};
   const running = await startDaemon({
@@ -544,6 +545,7 @@ test('startDaemon: auditor failure is collected once at the daemon owner boundar
     tools,
     haikuCaller,
     runtimeErrorObserver: async (kind) => observations.push(kind),
+    auditorAvailabilityObserver: async (input) => availability.push(input),
   });
   try {
     const response = await sendRequest({
@@ -554,6 +556,56 @@ test('startDaemon: auditor failure is collected once at the daemon owner boundar
     });
     assert.equal(response.ok, false);
     assert.deepEqual(observations, ['auditor_unavailable']);
+    assert.deepEqual(availability, []);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: a backend access failure is tracked for recovery instead of registered', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `runtime-auditor-access-${randomUUID()}`;
+  const observations = [];
+  const availability = [];
+  let reachable = false;
+  const haikuCaller = async () => {
+    if (!reachable) throw new HaikuError('E_HAIKU_TIMEOUT', 'SENTINEL_PROVIDER_FAILURE');
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  haikuCaller.reset = () => {};
+  const running = await startDaemon({
+    sessionId,
+    tools,
+    haikuCaller,
+    haikuCallWindowMs: 0,
+    runtimeErrorObserver: async (kind) => observations.push(kind),
+    auditorAvailabilityObserver: async (input) => availability.push(input),
+  });
+  try {
+    const failed = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '監査して' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error.code, 'E_HAIKU_TIMEOUT');
+    assert.deepEqual(availability, [{ outcome: 'failure', backend: 'haiku' }]);
+
+    reachable = true;
+    const recovered = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: 'もう一度監査して' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(recovered.ok, true);
+    assert.deepEqual(availability, [
+      { outcome: 'failure', backend: 'haiku' },
+      { outcome: 'success', backend: 'haiku' },
+    ]);
+    assert.deepEqual(observations, []);
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });
@@ -598,6 +650,41 @@ test('startDaemon: listen failure is collected once at the transport owner bound
   }), { code: 'EADDRINUSE' });
   assert.deepEqual(observations, ['daemon_transport']);
   await rm(dir, { recursive: true, force: true });
+});
+
+test('startDaemon: a fault on one connection is not counted as the daemon failing to listen', async () => {
+  const { dir, tools } = await setupCatalog();
+  const observations = [];
+  const server = new EventEmitter();
+  server.listen = (_path, onListening) => queueMicrotask(onListening);
+  server.close = (onClosed) => queueMicrotask(onClosed);
+  let reportConnectionError;
+  const running = await startDaemon({
+    sessionId: `runtime-connection-${randomUUID()}`,
+    tools,
+    haikuCaller: async () => JSON.stringify({ pass: true, missing_tools: [] }),
+    runtimeErrorObserver: async (kind) => observations.push(kind),
+    createServerFn: ({ onError }) => {
+      reportConnectionError = onError;
+      return { server, path: '/tmp/spotter-test-runtime-connection.sock' };
+    },
+    removeStaleSocketFileFn: async () => {},
+    secureSocketFileFn: async () => {},
+    writePidFileFn: async () => {},
+  });
+  try {
+    reportConnectionError(Object.assign(new Error('SENTINEL_CONNECTION'), { code: 'ECONNRESET' }), null);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(observations, ['daemon_connection']);
+
+    // An error of the listening server itself stays with the transport kind.
+    server.emit('error', Object.assign(new Error('SENTINEL_SERVER'), { code: 'EMFILE' }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(observations, ['daemon_connection', 'daemon_transport']);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('startDaemon: user_input log records duration_ms and mode=first', async () => {

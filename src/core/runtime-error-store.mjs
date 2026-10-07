@@ -16,32 +16,67 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { version } from '../version.mjs';
 import { WINDOWS_POWERSHELL_COMMAND } from '../platform/spawn.mjs';
+import { AUDITOR_AVAILABILITY_BACKENDS } from './auditor-outcome.mjs';
 import { readRuntimeReportConfig } from './runtime-report-config.mjs';
 
 export const RUNTIME_ERROR_STORE_SCHEMA = 'spotter.runtime_errors.v1';
 export const RUNTIME_ERROR_STATE_SCHEMA_VERSION = '1.0';
 export const RUNTIME_ERROR_STORE_FAILURE_DIAGNOSTIC = 'spotter-runtime-errors: local aggregate store unavailable\n';
 
+// Severity follows what stops, what is lost and whether it comes back. No kind loses the user's
+// input, conversation or results, and none runs anything twice, so none is fatal.
+// - high: audits are stopped across a whole session or backend and no recovery is observed.
+// - warn: at most one audit or one hook request is affected and the next one runs normally.
 export const RUNTIME_ERROR_DEFINITIONS = deepFreeze({
+  // The daemon could not listen, or its listening server failed. A daemon that cannot listen
+  // exits: every audit of that Claude session is missing from the first prompt, and each
+  // UserPromptSubmit retries the start and waits up to 3 s for it. It comes back only when the
+  // cause on the terminal is gone. For an error after listening the daemon keeps running and
+  // the extent is not determined here.
   daemon_transport: {
     component: 'daemon_transport',
     errorCode: 'SPOTTER.DAEMON.TRANSPORT',
     messageTemplate: 'Spotter daemon transport failed',
     severity: 'high',
   },
+  // A fault on one live hook connection. The daemon keeps serving and the next request opens
+  // a new connection. A hook that goes away before the reply does not raise it.
+  daemon_connection: {
+    component: 'daemon_transport',
+    errorCode: 'SPOTTER.DAEMON.CONNECTION',
+    messageTemplate: 'Spotter daemon connection to a hook failed; at most one hook request was affected',
+    severity: 'warn',
+  },
+  // The PID file could not be written, so the daemon closes its listener and exits. Same
+  // effect on the session as a daemon that cannot listen.
   daemon_persistence: {
     component: 'daemon_persistence',
     errorCode: 'SPOTTER.DAEMON.PERSISTENCE',
     messageTemplate: 'Spotter daemon state persistence failed',
     severity: 'high',
   },
+  // One audit failed for a reason other than backend access. The next audit runs normally.
   auditor_unavailable: {
     component: 'auditor',
     errorCode: 'SPOTTER.AUDITOR.UNAVAILABLE',
     messageTemplate: 'Spotter auditor backend was unavailable',
     severity: 'warn',
   },
+  // Registered once per outage, only after backend access kept failing with no completed
+  // audit in between: every audit through that backend on this terminal has been missing for
+  // 30 minutes or more and no recovery is observed.
+  auditor_unrecovered: {
+    component: 'auditor',
+    errorCode: 'SPOTTER.AUDITOR.UNRECOVERED',
+    messageTemplate: 'Spotter auditor backend access kept failing for over 30 minutes with no successful audit; cause not determined',
+    severity: 'high',
+  },
 });
+
+export const AUDITOR_AVAILABILITY_SCHEMA = 'spotter.auditor_availability.v1';
+export const AUDITOR_UNRECOVERED_AFTER_MS = 30 * 60 * 1_000;
+const AUDITOR_AVAILABILITY_FILE = 'auditor-availability-v1.json';
+const AUDITOR_AVAILABILITY_OUTCOMES = new Set(['success', 'failure']);
 
 const CONFIG_TOP_KEYS = new Set(['schema_version', 'host', 'collection', 'reporting']);
 const HOST_KEYS = new Set(['id', 'profile']);
@@ -151,56 +186,220 @@ export async function observeRuntimeError(input, options = {}) {
   const definition = RUNTIME_ERROR_DEFINITIONS[kind];
   const fingerprint = runtimeErrorFingerprint(definition);
   const storePath = options.storePath ?? defaultRuntimeErrorStorePath(options);
-  const result = await mutateStore(storePath, options, (store) => {
-    const receipt = observationId
-      ? store.receipts.find((candidate) => candidate.id === observationId)
-      : null;
-    if (receipt) {
-      if (receipt.fingerprint !== fingerprint) {
-        throw storeError('runtime error observation id conflicts with another fingerprint');
-      }
-      const existing = store.records.find((record) => record.fingerprint === fingerprint);
-      return { collected: true, fingerprint, sequence: existing?.sequence ?? null, duplicate: true };
+  return mutateStore(storePath, options, (store) => (
+    applyObservation(store, definition, fingerprint, observationId, options)
+  ));
+}
+
+function applyObservation(store, definition, fingerprint, observationId, options) {
+  const receipt = observationId
+    ? store.receipts.find((candidate) => candidate.id === observationId)
+    : null;
+  if (receipt) {
+    if (receipt.fingerprint !== fingerprint) {
+      throw storeError('runtime error observation id conflicts with another fingerprint');
     }
-    const timestamp = nowIso(options.now);
     const existing = store.records.find((record) => record.fingerprint === fingerprint);
-    const sequence = store.next_sequence++;
-    if (existing) {
-      existing.product_version = validateProductVersion(options.productVersion ?? version);
-      existing.occurrence_count += 1;
-      existing.last_seen = timestamp;
-      existing.status = 'open';
-      existing.resolved_at = null;
-      existing.reason_code = null;
-      existing.sequence = sequence;
-    } else {
-      store.records.push({
-        product: 'spotter',
-        product_version: validateProductVersion(options.productVersion ?? version),
-        component: definition.component,
-        error_code: definition.errorCode,
-        message_template: definition.messageTemplate,
-        severity: definition.severity,
-        fingerprint,
-        occurrence_count: 1,
-        first_seen: timestamp,
-        last_seen: timestamp,
-        state_schema_version: RUNTIME_ERROR_STATE_SCHEMA_VERSION,
-        os: validatePlatform(options.platform ?? currentPlatform()),
-        arch: validateArch(options.arch ?? currentArch()),
-        status: 'open',
-        resolved_at: null,
-        reason_code: null,
-        sequence,
-      });
-    }
-    if (observationId) {
-      store.receipts.push({ id: observationId, fingerprint });
-      if (store.receipts.length > MAX_RECEIPTS) store.receipts.splice(0, store.receipts.length - MAX_RECEIPTS);
-    }
-    return { collected: true, fingerprint, sequence };
+    return { collected: true, fingerprint, sequence: existing?.sequence ?? null, duplicate: true };
+  }
+  const timestamp = nowIso(options.now);
+  const existing = store.records.find((record) => record.fingerprint === fingerprint);
+  const sequence = store.next_sequence++;
+  if (existing) {
+    existing.product_version = validateProductVersion(options.productVersion ?? version);
+    existing.occurrence_count += 1;
+    existing.last_seen = timestamp;
+    existing.status = 'open';
+    existing.resolved_at = null;
+    existing.reason_code = null;
+    existing.sequence = sequence;
+  } else {
+    store.records.push({
+      product: 'spotter',
+      product_version: validateProductVersion(options.productVersion ?? version),
+      component: definition.component,
+      error_code: definition.errorCode,
+      message_template: definition.messageTemplate,
+      severity: definition.severity,
+      fingerprint,
+      occurrence_count: 1,
+      first_seen: timestamp,
+      last_seen: timestamp,
+      state_schema_version: RUNTIME_ERROR_STATE_SCHEMA_VERSION,
+      os: validatePlatform(options.platform ?? currentPlatform()),
+      arch: validateArch(options.arch ?? currentArch()),
+      status: 'open',
+      resolved_at: null,
+      reason_code: null,
+      sequence,
+    });
+  }
+  if (observationId) {
+    store.receipts.push({ id: observationId, fingerprint });
+    if (store.receipts.length > MAX_RECEIPTS) store.receipts.splice(0, store.receipts.length - MAX_RECEIPTS);
+  }
+  return { collected: true, fingerprint, sequence };
+}
+
+export function auditorAvailabilityPath(storePath) {
+  return join(dirname(storePath), AUDITOR_AVAILABILITY_FILE);
+}
+
+export async function observeAuditorAvailability(input, options = {}) {
+  const { outcome, backend } = validateAvailabilityInput(input);
+  const collection = await readRuntimeCollectionMode(options);
+  if (!collection.enabled) return { collected: false, reason: collection.mode };
+  const storePath = options.storePath ?? defaultRuntimeErrorStorePath(options);
+  const statePath = auditorAvailabilityPath(storePath);
+  return enqueue(storePath, async () => {
+    await ensurePrivateDirectory(dirname(storePath), options);
+    return withStoreLock(runtimeErrorLockPath(storePath), options, async () => {
+      const state = await readAvailabilityState(statePath, options);
+      const streak = state.streaks[backend];
+      if (outcome === 'success') {
+        if (!streak) return { collected: true, streak: 'none' };
+        delete state.streaks[backend];
+        await writeAvailabilityState(statePath, state);
+        return { collected: true, streak: 'cleared' };
+      }
+      const timestamp = nowIso(options.now);
+      // A clock that moved backwards restarts the streak instead of producing a negative age.
+      const current = streak && streak.first_failed_at <= timestamp
+        ? { ...streak, last_failed_at: timestamp }
+        : { first_failed_at: timestamp, last_failed_at: timestamp, registered: false };
+      let registered = false;
+      if (!current.registered
+        && Date.parse(timestamp) - Date.parse(current.first_failed_at) >= AUDITOR_UNRECOVERED_AFTER_MS) {
+        const definition = RUNTIME_ERROR_DEFINITIONS.auditor_unrecovered;
+        const fingerprint = runtimeErrorFingerprint(definition);
+        // The streak start identifies the outage, so a retry after a failed state write
+        // cannot count the same outage twice.
+        const observationId = createHash('sha256')
+          .update(`auditor_unrecovered\n${backend}\n${current.first_failed_at}`, 'utf8').digest('hex').slice(0, 32);
+        const store = await readStore(storePath, options);
+        applyObservation(store, definition, fingerprint, observationId, { ...options, now: () => timestamp });
+        validateStore(store);
+        const atomicWriteFn = options.atomicWriteFn ?? atomicWriteStore;
+        await atomicWriteFn(storePath, `${JSON.stringify(store)}\n`, options);
+        current.registered = true;
+        registered = true;
+      }
+      state.streaks[backend] = current;
+      await writeAvailabilityState(statePath, state);
+      return { collected: true, streak: current.registered ? 'registered' : 'open', registered };
+    });
   });
-  return result;
+}
+
+// Success is the hot path of every audit. A worker is started only when this backend has a
+// failure streak to end; the unlocked read is a hint and the worker re-reads under the lock.
+export async function observeAuditorAvailabilityIsolatedSafe(input, options = {}) {
+  let parsed;
+  try {
+    parsed = validateAvailabilityInput(input);
+  } catch {
+    return emitFixedStoreFailure(options);
+  }
+  const storePath = options.storePath ?? defaultRuntimeErrorStorePath(options);
+  if (parsed.outcome === 'success') {
+    let streaks;
+    try {
+      streaks = JSON.parse(await readFile(auditorAvailabilityPath(storePath), 'utf8'))?.streaks;
+    } catch (error) {
+      if (error?.code === 'ENOENT') return { collected: false, reason: 'no_failure_streak' };
+      return emitFixedStoreFailure(options);
+    }
+    if (!streaks || typeof streaks !== 'object') return emitFixedStoreFailure(options);
+    if (!Object.hasOwn(streaks, parsed.backend)) return { collected: false, reason: 'no_failure_streak' };
+  }
+  const platform = options.platform ?? process.platform;
+  const timeoutMs = options.timeoutMs ?? (platform === 'win32'
+    ? WINDOWS_DEFAULT_ISOLATED_TIMEOUT_MS
+    : DEFAULT_ISOLATED_TIMEOUT_MS);
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 10 || timeoutMs > 10_000) {
+    return emitFixedStoreFailure(options);
+  }
+  const workerOptions = {
+    configPath: options.configPath ?? null,
+    productConfigPath: options.productConfigPath,
+    storePath,
+    productVersion: options.productVersion ?? version,
+    platform: options.platform ?? process.platform,
+    arch: options.arch ?? process.arch,
+  };
+  const encoded = Buffer.from(JSON.stringify(workerOptions), 'utf8').toString('base64url');
+  const observed = await runRuntimeWorker(
+    options.workerPath ?? RUNTIME_ERROR_WORKER,
+    ['availability', `${parsed.outcome}:${parsed.backend}`, encoded],
+    timeoutMs,
+  );
+  if (observed.kind === 'exit' && observed.code === 0) return { collected: true };
+  if (observed.kind === 'exit' && observed.code === 10) return { collected: false, reason: 'collection_disabled' };
+  return emitFixedStoreFailure(options);
+}
+
+function validateAvailabilityInput(input) {
+  assertExactObject(input, new Set(['outcome', 'backend']));
+  if (!AUDITOR_AVAILABILITY_OUTCOMES.has(input.outcome) || !AUDITOR_AVAILABILITY_BACKENDS.has(input.backend)) {
+    throw inputError('invalid auditor availability observation');
+  }
+  return { outcome: input.outcome, backend: input.backend };
+}
+
+async function readAvailabilityState(statePath, options) {
+  let raw;
+  try {
+    raw = decodeUtf8(await readPrivateFile(statePath, options, { enforceWindowsAcl: false }));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { schema: AUDITOR_AVAILABILITY_SCHEMA, streaks: {} };
+    throw error;
+  }
+  let state;
+  try {
+    state = JSON.parse(raw);
+  } catch {
+    throw storeError('auditor availability state is malformed');
+  }
+  if (!state || typeof state !== 'object' || Array.isArray(state)
+    || !hasOnlyKeys(state, new Set(['schema', 'streaks'])) || Object.keys(state).length !== 2
+    || state.schema !== AUDITOR_AVAILABILITY_SCHEMA
+    || !state.streaks || typeof state.streaks !== 'object' || Array.isArray(state.streaks)
+    || !hasOnlyKeys(state.streaks, AUDITOR_AVAILABILITY_BACKENDS)) {
+    throw storeError('auditor availability state schema mismatch');
+  }
+  const streakKeys = new Set(['first_failed_at', 'last_failed_at', 'registered']);
+  for (const streak of Object.values(state.streaks)) {
+    if (!streak || typeof streak !== 'object' || Array.isArray(streak)
+      || !hasOnlyKeys(streak, streakKeys) || Object.keys(streak).length !== streakKeys.size
+      || !validTimestamp(streak.first_failed_at) || !validTimestamp(streak.last_failed_at)
+      || streak.first_failed_at > streak.last_failed_at || typeof streak.registered !== 'boolean') {
+      throw storeError('auditor availability state schema mismatch');
+    }
+  }
+  return state;
+}
+
+// The directory is already owner-private (0700, or the owner-only inherited ACL on Windows),
+// and the state holds only backend names and timestamps.
+async function writeAvailabilityState(statePath, state) {
+  if (Object.keys(state.streaks).length === 0) {
+    await rm(statePath, { force: true });
+    return;
+  }
+  const temporary = `${statePath}.${process.pid}.${randomUUID()}.tmp`;
+  let handle;
+  try {
+    handle = await open(temporary, 'wx', 0o600);
+    await handle.writeFile(`${JSON.stringify(state)}\n`, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await rename(temporary, statePath);
+  } catch (error) {
+    await handle?.close().catch(() => {});
+    await rm(temporary, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 export async function observeRuntimeErrorSafe(input, options = {}) {

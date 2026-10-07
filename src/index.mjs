@@ -48,6 +48,7 @@ export {
   summarizeDaemonLogText,
   summarizeDaemonLogs,
 } from './core/daemon-log-diagnostics.mjs';
+export { auditorFailureLane } from './core/auditor-outcome.mjs';
 export {
   RUNTIME_ERROR_DEFINITIONS,
   RUNTIME_ERROR_STORE_SCHEMA,
@@ -55,6 +56,8 @@ export {
   compactRuntimeErrors,
   defaultFactoryReporterConfigPath,
   defaultRuntimeErrorStorePath,
+  observeAuditorAvailability,
+  observeAuditorAvailabilityIsolatedSafe,
   observeRuntimeError,
   observeRuntimeErrorIsolatedSafe,
   observeRuntimeErrorSafe,

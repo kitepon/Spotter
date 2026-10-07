@@ -5,7 +5,9 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { open } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
-import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
+import {
+  observeAuditorAvailabilityIsolatedSafe, observeRuntimeErrorIsolatedSafe,
+} from '../core/runtime-error-store.mjs';
 
 function parseArgs(argv) {
   const out = { sessionId: null, projectRoot: null };
@@ -94,6 +96,7 @@ export async function runDaemonStart({ argv }) {
       projectRoot,
       logFn: log,
       runtimeErrorObserver: observeRuntimeErrorIsolatedSafe,
+      auditorAvailabilityObserver: observeAuditorAvailabilityIsolatedSafe,
     });
   } catch (err) {
     if (err instanceof DaemonAlreadyRunningError) {
