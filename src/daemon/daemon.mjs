@@ -35,6 +35,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer, ensureRuntimeDir, removeStaleSocketFile, secureSocketFile, socketPath } from './transport.mjs';
 import { readLocal } from '../tool-db/refresh.mjs';
 import { legacyResultFromJudgment } from '../core/judgment.mjs';
+import { reportAuditorFailure, reportAuditorSuccess } from '../core/auditor-outcome.mjs';
 import {
   createAuditorBackend,
   DEFAULT_HAIKU_AUDITOR_TIMEOUT_MS,
@@ -86,6 +87,7 @@ export async function startDaemon({
   auditorEnv = process.env,
   stopShortFinalMaxChars = resolveStopShortFinalMaxChars(process.env),
   runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
+  auditorAvailabilityObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
   createAuditorBackendFn = createAuditorBackend,
   createServerFn = createServer,
   removeStaleSocketFileFn = removeStaleSocketFile,
@@ -180,14 +182,20 @@ export async function startDaemon({
   // Tests may pass haikuCallWindowMs: 0 to disable this guard.
   let lastAuditorCallAt = 0;
 
+  const auditorOutcomeObservers = {
+    runtimeErrorObserver, auditorAvailabilityObserver, backend: auditorBackend.name,
+  };
   const runAuditorJudgment = async (input) => {
     lastAuditorCallAt = Date.now();
+    let judgment;
     try {
-      return await auditorBackend.judge(input);
+      judgment = await auditorBackend.judge(input);
     } catch (error) {
-      await observeFailure('auditor_unavailable');
+      await reportAuditorFailure(error, auditorOutcomeObservers);
       throw error;
     }
+    await reportAuditorSuccess(judgment, auditorOutcomeObservers);
+    return judgment;
   };
 
   // v0.12.0: heartbeat. Reset on every envelope; if no event arrives within

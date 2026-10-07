@@ -535,8 +535,9 @@ test('startDaemon: auditor failure is collected once at the daemon owner boundar
   const { dir, tools } = await setupCatalog();
   const sessionId = `runtime-auditor-${randomUUID()}`;
   const observations = [];
+  const availability = [];
   const haikuCaller = async () => {
-    throw new HaikuError('E_HAIKU_TIMEOUT', 'SENTINEL_PROVIDER_FAILURE');
+    throw new HaikuError('E_INTERNAL', 'SENTINEL_PROVIDER_FAILURE');
   };
   haikuCaller.reset = () => {};
   const running = await startDaemon({
@@ -544,6 +545,7 @@ test('startDaemon: auditor failure is collected once at the daemon owner boundar
     tools,
     haikuCaller,
     runtimeErrorObserver: async (kind) => observations.push(kind),
+    auditorAvailabilityObserver: async (input) => availability.push(input),
   });
   try {
     const response = await sendRequest({
@@ -554,6 +556,56 @@ test('startDaemon: auditor failure is collected once at the daemon owner boundar
     });
     assert.equal(response.ok, false);
     assert.deepEqual(observations, ['auditor_unavailable']);
+    assert.deepEqual(availability, []);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startDaemon: a backend access failure is tracked for recovery instead of registered', async () => {
+  const { dir, tools } = await setupCatalog();
+  const sessionId = `runtime-auditor-access-${randomUUID()}`;
+  const observations = [];
+  const availability = [];
+  let reachable = false;
+  const haikuCaller = async () => {
+    if (!reachable) throw new HaikuError('E_HAIKU_TIMEOUT', 'SENTINEL_PROVIDER_FAILURE');
+    return JSON.stringify({ pass: true, missing_tools: [] });
+  };
+  haikuCaller.reset = () => {};
+  const running = await startDaemon({
+    sessionId,
+    tools,
+    haikuCaller,
+    haikuCallWindowMs: 0,
+    runtimeErrorObserver: async (kind) => observations.push(kind),
+    auditorAvailabilityObserver: async (input) => availability.push(input),
+  });
+  try {
+    const failed = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: '監査して' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error.code, 'E_HAIKU_TIMEOUT');
+    assert.deepEqual(availability, [{ outcome: 'failure', backend: 'haiku' }]);
+
+    reachable = true;
+    const recovered = await sendRequest({
+      sessionId,
+      event: 'user_input',
+      payload: { user_input: 'もう一度監査して' },
+      timeoutMs: 2_000,
+    });
+    assert.equal(recovered.ok, true);
+    assert.deepEqual(availability, [
+      { outcome: 'failure', backend: 'haiku' },
+      { outcome: 'success', backend: 'haiku' },
+    ]);
+    assert.deepEqual(observations, []);
   } finally {
     await running.stop();
     await rm(dir, { recursive: true, force: true });

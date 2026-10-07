@@ -31,7 +31,10 @@ import {
   hookEventsPath,
   summarizeHookEvents,
 } from '../core/hook-event-log.mjs';
-import { observeRuntimeErrorIsolatedSafe } from '../core/runtime-error-store.mjs';
+import {
+  observeAuditorAvailabilityIsolatedSafe, observeRuntimeErrorIsolatedSafe,
+} from '../core/runtime-error-store.mjs';
+import { reportAuditorFailure, reportAuditorSuccess } from '../core/auditor-outcome.mjs';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
 import { loadEvaluationContext } from '../core/evaluation-context.mjs';
 import {
@@ -87,11 +90,17 @@ export async function runCodexHookCommand({ argv = process.argv.slice(2) } = {})
     return;
   }
   if (sub === 'user-prompt-submit') {
-    await runCodexUserPromptSubmitHook({ runtimeErrorObserver: observeRuntimeErrorIsolatedSafe });
+    await runCodexUserPromptSubmitHook({
+      runtimeErrorObserver: observeRuntimeErrorIsolatedSafe,
+      auditorAvailabilityObserver: observeAuditorAvailabilityIsolatedSafe,
+    });
     return;
   }
   if (sub === 'stop') {
-    await runCodexStopHook({ runtimeErrorObserver: observeRuntimeErrorIsolatedSafe });
+    await runCodexStopHook({
+      runtimeErrorObserver: observeRuntimeErrorIsolatedSafe,
+      auditorAvailabilityObserver: observeAuditorAvailabilityIsolatedSafe,
+    });
     return;
   }
   process.stderr.write(`unknown codex-hook subcommand: ${sub}\n${CODEX_HOOK_USAGE}`);
@@ -130,6 +139,7 @@ export async function runCodexUserPromptSubmitHook({
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
   runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
+  auditorAvailabilityObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
   createEvaluationStoreFn = createEvaluationStore,
   loadEvaluationContextFn = loadEvaluationContext,
   randomUUIDFn = randomUUID,
@@ -206,7 +216,9 @@ export async function runCodexUserPromptSubmitHook({
     });
   } catch (err) {
     await recordEvaluation({ auditStatus: 'error', backend: err?.backend ?? null, model: err?.diagnostics?.modelSelection?.effectiveModel ?? null });
-    if (enteredAuditorBoundary) await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
+    if (enteredAuditorBoundary) {
+      await reportAuditorFailure(err, { runtimeErrorObserver, auditorAvailabilityObserver, backend: backend?.name });
+    }
     const failure = projectBackendFailure(err?.code);
     safeWriteError(writeError, failure.stderr);
     await recordCodexHookEventSafe(recordHookEventFn, {
@@ -224,6 +236,7 @@ export async function runCodexUserPromptSubmitHook({
     writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
     return;
   }
+  await reportAuditorSuccess(judgment, { auditorAvailabilityObserver, backend: backend.name });
   await recordCodexHookEventSafe(recordHookEventFn, {
     projectRoot,
     event: {
@@ -267,6 +280,7 @@ export async function runCodexStopHook({
   writeOutput = (text) => process.stdout.write(text),
   writeError = (text) => process.stderr.write(text),
   runtimeErrorObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
+  auditorAvailabilityObserver = async () => ({ collected: false, reason: 'observer_not_configured' }),
   createEvaluationStoreFn = createEvaluationStore,
   codexHome = process.env.CODEX_HOME || join(homedir(), '.codex'),
   now = () => Date.now(),
@@ -368,7 +382,9 @@ export async function runCodexStopHook({
     backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
     judgment = await backend.judge({ stage: 'turn_end', finalResponse, usedTools });
   } catch (err) {
-    if (enteredAuditorBoundary) await observeRuntimeFailure(runtimeErrorObserver, 'auditor_unavailable');
+    if (enteredAuditorBoundary) {
+      await reportAuditorFailure(err, { runtimeErrorObserver, auditorAvailabilityObserver, backend: backend?.name });
+    }
     const failure = projectBackendFailure(err?.code);
     reportError(failure.stderr);
     writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
@@ -387,6 +403,7 @@ export async function runCodexStopHook({
     }, reportError);
     return;
   }
+  await reportAuditorSuccess(judgment, { auditorAvailabilityObserver, backend: backend.name });
   if (judgment.pass === true) {
     await recordCodexHookEventSafe(recordHookEventFn, {
       projectRoot,
@@ -699,14 +716,6 @@ function createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBack
     env: process.env,
     timeoutMs: codexHookAuditorTimeoutMs(process.env),
   });
-}
-
-async function observeRuntimeFailure(observer, kind) {
-  try {
-    await observer(kind);
-  } catch {
-    // Runtime error telemetry must not alter hook output or exit behavior.
-  }
 }
 
 function resolveCodexHookAuditorBackend({ env }) {
