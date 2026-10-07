@@ -652,6 +652,41 @@ test('startDaemon: listen failure is collected once at the transport owner bound
   await rm(dir, { recursive: true, force: true });
 });
 
+test('startDaemon: a fault on one connection is not counted as the daemon failing to listen', async () => {
+  const { dir, tools } = await setupCatalog();
+  const observations = [];
+  const server = new EventEmitter();
+  server.listen = (_path, onListening) => queueMicrotask(onListening);
+  server.close = (onClosed) => queueMicrotask(onClosed);
+  let reportConnectionError;
+  const running = await startDaemon({
+    sessionId: `runtime-connection-${randomUUID()}`,
+    tools,
+    haikuCaller: async () => JSON.stringify({ pass: true, missing_tools: [] }),
+    runtimeErrorObserver: async (kind) => observations.push(kind),
+    createServerFn: ({ onError }) => {
+      reportConnectionError = onError;
+      return { server, path: '/tmp/spotter-test-runtime-connection.sock' };
+    },
+    removeStaleSocketFileFn: async () => {},
+    secureSocketFileFn: async () => {},
+    writePidFileFn: async () => {},
+  });
+  try {
+    reportConnectionError(Object.assign(new Error('SENTINEL_CONNECTION'), { code: 'ECONNRESET' }), null);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(observations, ['daemon_connection']);
+
+    // An error of the listening server itself stays with the transport kind.
+    server.emit('error', Object.assign(new Error('SENTINEL_SERVER'), { code: 'EMFILE' }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(observations, ['daemon_connection', 'daemon_transport']);
+  } finally {
+    await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('startDaemon: user_input log records duration_ms and mode=first', async () => {
   // The daemon tags each Haiku-invoking log line with duration_ms (measured around the
   // caller) and mode (first|resumed, read from caller.isFirstCall). This lets us observe

@@ -63,8 +63,29 @@ test('recovery window is 30 minutes and the outage kind states what was observed
     component: 'auditor',
     errorCode: 'SPOTTER.AUDITOR.UNRECOVERED',
     messageTemplate: 'Spotter auditor backend access kept failing for over 30 minutes with no successful audit; cause not determined',
+    severity: 'high',
+  });
+});
+
+test('severity separates a session-wide or unrecovered stop from a single affected request', () => {
+  const severities = Object.fromEntries(
+    Object.entries(RUNTIME_ERROR_DEFINITIONS).map(([kind, definition]) => [kind, definition.severity]),
+  );
+  assert.deepEqual(severities, {
+    daemon_transport: 'high',
+    daemon_connection: 'warn',
+    daemon_persistence: 'high',
+    auditor_unavailable: 'warn',
+    auditor_unrecovered: 'high',
+  });
+  assert.deepEqual(RUNTIME_ERROR_DEFINITIONS.daemon_connection, {
+    component: 'daemon_transport',
+    errorCode: 'SPOTTER.DAEMON.CONNECTION',
+    messageTemplate: 'Spotter daemon connection to a hook failed; at most one hook request was affected',
     severity: 'warn',
   });
+  const fingerprints = Object.values(RUNTIME_ERROR_DEFINITIONS).map(runtimeErrorFingerprint);
+  assert.equal(new Set(fingerprints).size, fingerprints.length);
 });
 
 test('auditorFailureLane: backend access failures wait for recovery, everything else registers at once', () => {
@@ -137,7 +158,7 @@ test('failures that recover inside the window never register, however many there
   assert.deepEqual(await records(box), []);
 });
 
-test('a streak that outlives the window is registered once as an open warn record', async (t) => {
+test('a streak that outlives the window is registered once as an open high record', async (t) => {
   const box = await sandbox(t);
   await fail(box, 0);
   assert.deepEqual(await fail(box, 29), { collected: true, streak: 'open', registered: false });
@@ -148,7 +169,7 @@ test('a streak that outlives the window is registered once as an open warn recor
   assert.deepEqual(rest, []);
   assert.equal(record.error_code, 'SPOTTER.AUDITOR.UNRECOVERED');
   assert.equal(record.fingerprint, UNRECOVERED_FINGERPRINT);
-  assert.equal(record.severity, 'warn');
+  assert.equal(record.severity, 'high');
   assert.equal(record.status, 'open');
   assert.equal(record.occurrence_count, 1);
   assert.equal(record.first_seen, '2026-10-07T00:30:00.000Z');

@@ -23,33 +23,53 @@ export const RUNTIME_ERROR_STORE_SCHEMA = 'spotter.runtime_errors.v1';
 export const RUNTIME_ERROR_STATE_SCHEMA_VERSION = '1.0';
 export const RUNTIME_ERROR_STORE_FAILURE_DIAGNOSTIC = 'spotter-runtime-errors: local aggregate store unavailable\n';
 
+// Severity follows what stops, what is lost and whether it comes back. No kind loses the user's
+// input, conversation or results, and none runs anything twice, so none is fatal.
+// - high: audits are stopped across a whole session or backend and no recovery is observed.
+// - warn: at most one audit or one hook request is affected and the next one runs normally.
 export const RUNTIME_ERROR_DEFINITIONS = deepFreeze({
+  // The daemon could not listen, or its listening server failed. A daemon that cannot listen
+  // exits: every audit of that Claude session is missing from the first prompt, and each
+  // UserPromptSubmit retries the start and waits up to 3 s for it. It comes back only when the
+  // cause on the terminal is gone. For an error after listening the daemon keeps running and
+  // the extent is not determined here.
   daemon_transport: {
     component: 'daemon_transport',
     errorCode: 'SPOTTER.DAEMON.TRANSPORT',
     messageTemplate: 'Spotter daemon transport failed',
     severity: 'high',
   },
+  // A fault on one live hook connection. The daemon keeps serving and the next request opens
+  // a new connection. A hook that goes away before the reply does not raise it.
+  daemon_connection: {
+    component: 'daemon_transport',
+    errorCode: 'SPOTTER.DAEMON.CONNECTION',
+    messageTemplate: 'Spotter daemon connection to a hook failed; at most one hook request was affected',
+    severity: 'warn',
+  },
+  // The PID file could not be written, so the daemon closes its listener and exits. Same
+  // effect on the session as a daemon that cannot listen.
   daemon_persistence: {
     component: 'daemon_persistence',
     errorCode: 'SPOTTER.DAEMON.PERSISTENCE',
     messageTemplate: 'Spotter daemon state persistence failed',
     severity: 'high',
   },
+  // One audit failed for a reason other than backend access. The next audit runs normally.
   auditor_unavailable: {
     component: 'auditor',
     errorCode: 'SPOTTER.AUDITOR.UNAVAILABLE',
     messageTemplate: 'Spotter auditor backend was unavailable',
     severity: 'warn',
   },
-  // Registered once per outage, only after backend access kept failing with no successful
-  // audit in between. The audit is advisory: the parent turn, the user's input and results
-  // are kept and nothing runs twice, so the harm is the missing advice for those turns.
+  // Registered once per outage, only after backend access kept failing with no completed
+  // audit in between: every audit through that backend on this terminal has been missing for
+  // 30 minutes or more and no recovery is observed.
   auditor_unrecovered: {
     component: 'auditor',
     errorCode: 'SPOTTER.AUDITOR.UNRECOVERED',
     messageTemplate: 'Spotter auditor backend access kept failing for over 30 minutes with no successful audit; cause not determined',
-    severity: 'warn',
+    severity: 'high',
   },
 });
 

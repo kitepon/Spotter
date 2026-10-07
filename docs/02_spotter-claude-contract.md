@@ -329,7 +329,7 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   performs no network I/O and accepts only fixed Spotter
   failure kinds; code, template, component, and severity come from a closed registry rather than
   exception/provider/hook input. Fingerprints use the factory-v1 canonical SHA-256 sequence.
-- The daemon owns transport and PID-state persistence observations. The daemon owns Claude primary
+- The daemon owns transport, connection and PID-state persistence observations. The daemon owns Claude primary
   auditor failures, while the direct Codex hook owns its own primary auditor/context availability
   failure. Claude hook adapters do not count daemon failures again. Store failures are non-blocking
   and emit only `spotter-runtime-errors: local aggregate store unavailable` on stderr.
@@ -346,10 +346,25 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   `SPOTTER.AUDITOR.UNAVAILABLE` on each occurrence. The lane decides only when to register. Neither
   record says whether the product or the environment is at fault, and both stay open until an
   operator resolves them.
-- Severity follows the harm, not the error value. The audit is advisory: when it is unavailable the
-  parent conversation, the user's input and the results are kept and nothing runs twice, so both
-  auditor records are `warn`. Daemon transport and PID-state persistence failures are local to the
-  terminal, not network access; their `high` is not changed by this rule.
+- Severity follows what stops, what is lost and whether it comes back, not the error value. No
+  kind loses the user's input, conversation or results, and none runs anything twice, so none is
+  `fatal`. `high` means audits are stopped across a whole session or backend and no recovery is
+  observed; `warn` means at most one audit or one hook request is affected and the next one runs
+  normally.
+  - `SPOTTER.DAEMON.TRANSPORT` and `SPOTTER.DAEMON.PERSISTENCE` (`high`): the daemon cannot listen
+    or cannot write its PID file, so it exits. Every UserPromptSubmit and Stop audit of that Claude
+    session and its tool-usage aggregation are missing from the first prompt. UserPromptSubmit shows
+    the fixed notice and exits 0, Stop stays non-blocking and PreToolUse allows the tool. Each
+    UserPromptSubmit retries the start and waits up to 3 s for readiness; it succeeds only once the
+    cause on the terminal is gone. `TRANSPORT` is also registered for an error of the listening
+    server after start; there the daemon keeps running and the extent is not determined at the
+    registration site.
+  - `SPOTTER.AUDITOR.UNRECOVERED` (`high`): every audit through that backend on the terminal has
+    been missing for 30 minutes or more with no completed audit.
+  - `SPOTTER.AUDITOR.UNAVAILABLE` (`warn`): one audit failed for a reason other than backend access.
+  - `SPOTTER.DAEMON.CONNECTION` (`warn`): a fault on one live hook connection. The daemon keeps
+    serving and the next request opens a new connection. A hook that is cancelled or killed before
+    the reply does not raise it on Linux, macOS or Windows.
 - Production owner boundaries isolate collection in a bounded, killable child-process group. Timeout
   terminates the worker and its descendants, so FIFO/device I/O cannot indefinitely block a hook or daemon.
   Optional reporter endpoints are valid only when the exact input equals `new URL(input).href`, uses

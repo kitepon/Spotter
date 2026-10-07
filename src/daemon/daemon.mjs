@@ -413,9 +413,9 @@ export async function startDaemon({
     if (envelope?.event === 'tool_used' && envelope.payload?.evaluation_observed === true) {
       state.evaluationUsageIncomplete = true;
     }
-    // Handler/auditor failures are owned above. A connection-level error has no
-    // envelope and belongs to the transport boundary here.
-    if (envelope === null) void observeFailure('daemon_transport');
+    // Handler/auditor failures are owned above. A connection-level error has no envelope.
+    // It affects that one connection; the daemon keeps serving the others.
+    if (envelope === null) void observeFailure('daemon_connection');
   };
 
   const { server, path } = createServerFn({ sessionId, handler, onError: onErrorFn });
