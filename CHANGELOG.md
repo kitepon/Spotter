@@ -3,6 +3,17 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.4 — 2026-10-09
+
+- Windowsで、監査の制限時間と同時にCodexが自分で終わった時、`taskkill`がrootを見つけられず（exit 128）、
+  Spotterが「process treeの終了を確認できない」（`E_CODEX_CLI_TERMINATION`）として扱っていた。この失敗は
+  汎用の失敗として`SPOTTER.AUDITOR.UNAVAILABLE`へ即時登録される。child自身のclose（終了と全stdio pipeのEOF）を
+  確認できた時だけ終了済みとし、監査はtimeoutのまま扱う。closeを確認できない時と、128以外の`taskkill`失敗は
+  従来どおり`E_CODEX_CLI_TERMINATION`にする。
+- CodexとGrokの失敗hook eventへ、失敗した段の内部code（`internalCode`）と、あればその原因のcode・終了status
+  （`causeCode`、`causeExitCode`）を残す。これまでは表示用にまとめた`code`だけが残り、1回の失敗の種類を
+  logから読み戻せなかった。記録するのは固定の識別子と終了statusだけで、hookの出力とstderrは変えていない。
+
 ## 1.9.3 — 2026-10-07
 
 - 監査backendへ届かない・応じてもらえない失敗（network、timeout、認証、利用上限、5xx）を、1回ごとに

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createAuditorBackend } from '../core/auditor-backend.mjs';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
-import { appendHookEventSafe } from '../core/hook-event-log.mjs';
+import { appendHookEventSafe, failureEventFields } from '../core/hook-event-log.mjs';
 import { projectBackendFailure, projectToolIds } from '../hooks/parent-output-projector.mjs';
 import { findSpotterMarker, isChildCall, readStdinJson, requireString } from '../hooks/lib.mjs';
 import { readLocal, refresh } from '../tool-db/refresh.mjs';
@@ -154,7 +154,7 @@ export async function runGrokHook({
     const failure = projectBackendFailure(error?.code);
     writeError(failure.stderr);
     await record(projectRoot, expected, {
-      status: 'degraded', code: failure.code, durationMs: Date.now() - startedAt,
+      status: 'degraded', code: failure.code, ...failureEventFields(error), durationMs: Date.now() - startedAt,
     }, recordFn);
     if (prompt !== null) await recordGrokEvaluation({ createEvaluationStoreFn, projectRoot, input, prompt, status: 'error', writeError });
     return;

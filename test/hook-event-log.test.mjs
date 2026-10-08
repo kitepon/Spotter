@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import {
   appendHookEvent,
   appendHookEventSafe,
+  failureEventFields,
   hookEventsPath,
   summarizeHookEvents,
   HOOK_EVENT_SCHEMA,
@@ -162,4 +163,24 @@ test('appendHookEvent: creates .spotter/ directory when missing', async () => {
   } finally {
     await rm(project, { recursive: true, force: true });
   }
+});
+
+test('failureEventFields: keeps the failing step code, its cause code and exit status', () => {
+  const cause = Object.assign(new Error('taskkill exited with code 1'), { code: 'E_PROCESS_TREE_TERMINATION', exitCode: 1 });
+  const error = Object.assign(new Error('termination could not be verified'), { code: 'E_CODEX_CLI_TERMINATION', cause });
+  assert.deepEqual(failureEventFields(error), {
+    internalCode: 'E_CODEX_CLI_TERMINATION', causeCode: 'E_PROCESS_TREE_TERMINATION', causeExitCode: 1,
+  });
+  assert.deepEqual(failureEventFields(Object.assign(new Error('late'), { code: 'E_CODEX_CLI_TIMEOUT' })), {
+    internalCode: 'E_CODEX_CLI_TIMEOUT',
+  });
+});
+
+test('failureEventFields: takes fixed identifiers only, never free text', () => {
+  assert.deepEqual(failureEventFields(new Error('AI_SENTINEL:provider text')), { internalCode: null });
+  assert.deepEqual(failureEventFields(undefined), { internalCode: null });
+  const cause = Object.assign(new Error('x'), { code: 'not a code: AI_SENTINEL', exitCode: '1' });
+  const error = Object.assign(new Error('x'), { code: 'AI_SENTINEL provider text', cause });
+  assert.deepEqual(failureEventFields(error), { internalCode: null });
+  assert.deepEqual(failureEventFields({ code: `E_${'A'.repeat(80)}` }), { internalCode: null });
 });

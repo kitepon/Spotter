@@ -74,6 +74,30 @@ test('Grok prompt audits host-local catalog and records findings without stdout'
   assert.deepEqual(evaluations[0].proposedToolIds, ['mcp__demo__search']);
 });
 
+test('Grok prompt audit failure keeps the internal code in the event and fixed text on stderr', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-grok-failure-'));
+  await mkdir(join(projectRoot, '.spotter'));
+  await writeFile(join(projectRoot, '.spotter', 'marker.json'), '{}');
+  const events = [];
+  const errors = [];
+  await runGrokHook({
+    event: 'user_prompt_submit',
+    readInput: async () => ({ hookEventName: 'user_prompt_submit', sessionId: 's', cwd: projectRoot, prompt: 'Use the tool' }),
+    readLocalFn: async () => [{ name: 'mcp__demo__search', description: 'Search' }],
+    createAuditorBackendFn: () => ({ name: 'mock', judge: async () => {
+      throw Object.assign(new Error('AI_SENTINEL provider text'), { code: 'E_CODEX_CLI_EXIT' });
+    } }),
+    recordFn: async ({ event }) => events.push(event),
+    createEvaluationStoreFn: () => ({ recordTurn() {}, close() {} }),
+    writeError: (text) => errors.push(text),
+  });
+  assert.equal(events[0].status, 'degraded');
+  assert.equal(events[0].code, 'E_SPOTTER_AUDIT_GENERIC');
+  assert.equal(events[0].internalCode, 'E_CODEX_CLI_EXIT');
+  assert.doesNotMatch(JSON.stringify(events) + errors.join(''), /AI_SENTINEL/);
+  assert.doesNotMatch(errors.join(''), /E_CODEX_CLI_EXIT/);
+});
+
 test('Grok SessionStart completes host-local refresh before returning', async () => {
   const projectRoot = await mkdtemp(join(tmpdir(), 'spotter-grok-start-'));
   await mkdir(join(projectRoot, '.spotter'));

@@ -24,7 +24,10 @@
 //     backendDurationMs?: number | null,
 //     usedToolCount?: number,
 //     legacyPendingDiagnostic?: string | null,
-//     toolName?: string | null
+//     toolName?: string | null,
+//     internalCode?: string | null,   // failing step's own code; `code` is the projected one
+//     causeCode?: string,
+//     causeExitCode?: number
 //   }
 
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
@@ -33,6 +36,23 @@ import { dirname, join } from 'node:path';
 const HOOK_EVENTS_FILE = 'hook-events.jsonl';
 export const HOOK_EVENT_SCHEMA = 'spotter.hook_event.v1';
 export const HOOK_EVENTS_SUMMARY_SCHEMA = 'spotter.hook_events_summary.v1';
+
+const EVENT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
+
+function eventCode(value) {
+  return typeof value === 'string' && EVENT_CODE_PATTERN.test(value) ? value : null;
+}
+
+// `code` holds the projected, user-facing code, which folds many failures into one generic value.
+// These fields keep the failing step's own code so a single failure can be read back from the log.
+// Only fixed identifiers and an exit status are taken; messages and provider output never are.
+export function failureEventFields(error) {
+  const fields = { internalCode: eventCode(error?.code) };
+  const causeCode = eventCode(error?.cause?.code);
+  if (causeCode !== null) fields.causeCode = causeCode;
+  if (Number.isInteger(error?.cause?.exitCode)) fields.causeExitCode = error.cause.exitCode;
+  return fields;
+}
 
 export function hookEventsPath(projectRoot) {
   if (typeof projectRoot !== 'string' || projectRoot.length === 0) {

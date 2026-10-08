@@ -135,6 +135,16 @@ Hook event. Neither path may carry auditor prose or provider stdout / stderr int
 Codex hook auditor calls prefer Jev when configured, otherwise use the Codex production model policy, with a 20s timeout.
 The read-only Codex auditor uses `--skip-git-repo-check` because an installed Spotter project
 can be a non-Git directory; Codex's workspace trust gate must not prevent that audit.
+When the limit passes, the Codex CLI auditor ends the child's process tree before it reports the timeout
+(`taskkill /T /F` on Windows). A tree whose end cannot be confirmed is `E_CODEX_CLI_TERMINATION`, not a
+timeout. If taskkill finds no root process (exit 128) and the child itself has reported `close` — it exited
+and every stdio pipe reached EOF, the same evidence as an ordinary exit — the tree counts as ended and the
+audit stays a timeout. Without that `close`, for example while a descendant still holds a pipe, and for any
+other taskkill failure, the result remains `E_CODEX_CLI_TERMINATION`.
+Codex and Grok failure Hook events keep the projected `code` and add `internalCode`, the failing step's own
+code, plus `causeCode` and `causeExitCode` when the failure has them. These are fixed identifiers and an exit
+status; error messages and provider output are not recorded. Hook output and stderr still carry only the
+projected fixed text.
 Short `Stop` final responses with
 no used tools are skipped to avoid duplicate post-answer latency.
 When a Codex surface has no persisted transcript and sends a missing, `null`, or empty
@@ -460,6 +470,10 @@ quota を含む invocation failure で別 model へ fallback しない。`spotte
 - `test/judgment.test.mjs`: neutral finding / judgment schema and Claude legacy projection.
 - `test/codex-hook-cmd.test.mjs`: canonical hook generation / upgrade ownership、readiness、
   Stop structured event、legacy pending cleanup、bounded current-turn transcript integration。
+- `test/codex-cli-backend.test.mjs`: Codex CLI invocation, failure classification, and process-tree
+  termination on timeout, including a child that ended on its own before taskkill looked for it.
+- `test/hook-event-log.test.mjs`: Hook event log shape, summary, and the internal-code fields of
+  failure events.
 - `test/parent-output-projector.test.mjs`: catalog照合・tool ID grammar・固定非命令形助言・
   auditor/provider自由文の非反射。
 - `test/codex-auditor-model-policy.test.mjs`: versioned policy、override precedence、profile isolation。
