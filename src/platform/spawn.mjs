@@ -134,12 +134,41 @@ export function npmShimEntryPath(source, shimDir) {
   return win32.join(shimDir, ...segments);
 }
 
+// taskkill は root の pid が存在しない時に 128 で終わる。この時 taskkill は何も終了していない。
+const TASKKILL_PROCESS_NOT_FOUND = 128;
+
+// 'close' は process の終了と全 stdio pipe の EOF を意味する。root より長生きした子孫が
+// pipe を持っている間は stream が閉じないので、ここは false になる。
+function childHasClosed(child) {
+  if (!Number.isInteger(child.exitCode) && typeof child.signalCode !== 'string') return false;
+  return [child.stdin, child.stdout, child.stderr].every((stream) => !stream || stream.destroyed === true);
+}
+
+function waitForChildClose(child, graceMs) {
+  if (childHasClosed(child)) return Promise.resolve(true);
+  if (typeof child.once !== 'function' || typeof child.off !== 'function') return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const onClose = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      child.off('close', onClose);
+      resolve(childHasClosed(child));
+    }, graceMs);
+    child.once('close', onClose);
+  });
+}
+
 // cmd.exe shim のみ kill すると孫の CLI が残り得るため、Windows は process tree を
 // taskkill で終了する。taskkill 自体の起動・終了に失敗した時だけ direct kill へ戻す。
+// taskkill が root を見つけられなかった時は、child 自身の close を確認できた場合だけ終了済みとする。
+// timeout と同時に自分で終わった process を「終了未確認」にしないためで、close が無ければ従来どおり失敗する。
 export function terminateProcessTree(child, {
   platform = process.platform,
   spawnFn = spawn,
   timeoutMs = 5_000,
+  closeGraceMs = 500,
 } = {}) {
   if (!child || typeof child.kill !== 'function') return Promise.resolve();
   if (platform !== 'win32' || !Number.isSafeInteger(child.pid) || child.pid <= 0) {
@@ -184,9 +213,20 @@ export function terminateProcessTree(child, {
           finish();
           return;
         }
-        const error = new Error(`taskkill exited with code ${code}`);
-        error.code = 'E_PROCESS_TREE_TERMINATION';
-        finish(error);
+        const fail = () => {
+          const error = new Error(`taskkill exited with code ${code}`);
+          error.code = 'E_PROCESS_TREE_TERMINATION';
+          error.exitCode = code;
+          finish(error);
+        };
+        if (code !== TASKKILL_PROCESS_NOT_FOUND) {
+          fail();
+          return;
+        }
+        waitForChildClose(child, closeGraceMs).then((closed) => {
+          if (closed) finish();
+          else fail();
+        });
       });
     } catch (cause) {
       const error = new Error(`taskkill spawn failed: ${cause.message}`);

@@ -113,6 +113,74 @@ test('terminateProcessTree: taskkill非0はdirect killしてfail-loudにする',
   assert.equal(directKills, 1);
 });
 
+function exitedChild({ stdoutOpen = false } = {}) {
+  const child = new EventEmitter();
+  child.pid = 4321;
+  child.exitCode = 0;
+  child.signalCode = null;
+  child.stdin = { destroyed: true };
+  child.stdout = { destroyed: !stdoutOpen };
+  child.stderr = { destroyed: true };
+  child.directKills = 0;
+  child.kill = () => { child.directKills += 1; };
+  return child;
+}
+
+test('terminateProcessTree: taskkillがrootを見つけられず、childがclose済みなら終了済みとする', async () => {
+  const killer = new EventEmitter();
+  const child = exitedChild();
+  const terminated = terminateProcessTree(child, { platform: 'win32', spawnFn: () => killer });
+  killer.emit('close', 128);
+  await terminated;
+  assert.equal(child.directKills, 0);
+});
+
+test('terminateProcessTree: taskkill 128の後、猶予内にchildがcloseすれば終了済みとする', async () => {
+  const killer = new EventEmitter();
+  const child = exitedChild({ stdoutOpen: true });
+  const terminated = terminateProcessTree(child, {
+    platform: 'win32', spawnFn: () => killer, closeGraceMs: 1_000,
+  });
+  killer.emit('close', 128);
+  child.stdout.destroyed = true;
+  child.emit('close', 0, null);
+  await terminated;
+  assert.equal(child.directKills, 0);
+  assert.equal(child.listenerCount('close'), 0);
+});
+
+test('terminateProcessTree: taskkill 128でも子孫がpipeを持ちcloseしないならfail-loudにする', async () => {
+  const killer = new EventEmitter();
+  const child = exitedChild({ stdoutOpen: true });
+  const terminated = terminateProcessTree(child, {
+    platform: 'win32', spawnFn: () => killer, closeGraceMs: 10,
+  });
+  killer.emit('close', 128);
+  await assert.rejects(terminated, (error) => error.code === 'E_PROCESS_TREE_TERMINATION' && error.exitCode === 128);
+  assert.equal(child.directKills, 1);
+  assert.equal(child.listenerCount('close'), 0);
+});
+
+test('terminateProcessTree: taskkill 128でchildの終了を確認できなければfail-loudにする', async () => {
+  let directKills = 0;
+  const killer = new EventEmitter();
+  const terminated = terminateProcessTree({ pid: 999999, kill: () => { directKills += 1; } }, {
+    platform: 'win32', spawnFn: () => killer,
+  });
+  killer.emit('close', 128);
+  await assert.rejects(terminated, (error) => error.code === 'E_PROCESS_TREE_TERMINATION' && error.exitCode === 128);
+  assert.equal(directKills, 1);
+});
+
+test('terminateProcessTree: 128以外の非0はchildがclose済みでもfail-loudにする', async () => {
+  const killer = new EventEmitter();
+  const child = exitedChild();
+  const terminated = terminateProcessTree(child, { platform: 'win32', spawnFn: () => killer });
+  killer.emit('close', 1);
+  await assert.rejects(terminated, (error) => error.code === 'E_PROCESS_TREE_TERMINATION' && error.exitCode === 1);
+  assert.equal(child.directKills, 1);
+});
+
 test('createCodexCliAuditorBackend: Windowsの直接実行可能Codexをcmd.exeなしで起動する', async () => {
   let captured;
   const spawnFn = (command, args) => {
@@ -598,6 +666,45 @@ test('createCodexCliAuditorBackend: Windows tree終了未確認はtimeout成功�
     (error) => error instanceof AuditorBackendError
       && error.code === 'E_CODEX_CLI_TERMINATION'
       && error.stage === 'user_input',
+  );
+});
+
+test('createCodexCliAuditorBackend: Windowsでtimeoutと同時に自分で終わったCodexはtimeoutのまま扱う', async () => {
+  let child;
+  const spawnFn = () => {
+    child = new EventEmitter();
+    child.pid = 4321;
+    child.exitCode = null;
+    child.signalCode = null;
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => { throw new Error('direct kill must not run'); };
+    return child;
+  };
+  const backend = createCodexCliAuditorBackend({
+    catalog,
+    projectRoot: '/repo',
+    platform: 'win32',
+    codexBin: 'C:\\tools\\codex.exe',
+    spawnFn,
+    timeoutMs: 5,
+    terminateChildFn: (target, options) => {
+      const killer = new EventEmitter();
+      const terminated = terminateProcessTree(target, { ...options, spawnFn: () => killer });
+      // The child finishes on its own after the timer fired and before taskkill looks for it.
+      target.exitCode = 1;
+      target.stdout.destroy();
+      target.stderr.destroy();
+      target.emit('close', 1, null);
+      killer.emit('close', 128);
+      return terminated;
+    },
+  });
+  await assert.rejects(
+    backend.judge({ stage: 'user_input', userInput: 'x' }),
+    (error) => error instanceof AuditorBackendError
+      && error.code === 'E_CODEX_CLI_TIMEOUT'
+      && error.diagnostics.lastMessageCheck === 'missing_last_message',
   );
 });
 
