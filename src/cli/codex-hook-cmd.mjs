@@ -28,6 +28,7 @@ import {
 } from '../hooks/parent-output-projector.mjs';
 import {
   appendHookEvent,
+  failureEventFields,
   hookEventsPath,
   summarizeHookEvents,
 } from '../core/hook-event-log.mjs';
@@ -228,6 +229,7 @@ export async function runCodexUserPromptSubmitHook({
         status: 'error',
         backend: err?.backend ?? null,
         code: failure.code,
+        ...failureEventFields(err),
         ...compactCodexModelSelectionForEvent(err?.diagnostics?.modelSelection),
         legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
@@ -339,6 +341,7 @@ export async function runCodexStopHook({
         hook: 'Stop',
         status: 'error',
         code: failure.code,
+        ...failureEventFields(err),
         reason: 'tool_usage_observation',
         usedToolCount: 0,
         durationMs: Date.now() - startedAt,
@@ -395,6 +398,7 @@ export async function runCodexStopHook({
         status: 'error',
         backend: err?.backend ?? null,
         code: failure.code,
+        ...failureEventFields(err),
         ...compactCodexModelSelectionForEvent(err?.diagnostics?.modelSelection),
         usedToolCount: usedTools.length,
         ...toolUsageEvent,

@@ -872,6 +872,66 @@ test('runCodexUserPromptSubmitHook: backend error uses fixed systemMessage and n
   }
 });
 
+test('Codex hooks: failure events keep the internal code and cause while output stays fixed', async () => {
+  const project = await makeProject();
+  const out = [];
+  const errOut = [];
+  const events = [];
+  const observations = [];
+  const availability = [];
+  const failingBackend = () => ({
+    judge: async () => {
+      const cause = Object.assign(new Error('taskkill exited with code 1: AI_SENTINEL'), {
+        code: 'E_PROCESS_TREE_TERMINATION', exitCode: 1,
+      });
+      throw new AuditorBackendError('E_CODEX_CLI_TERMINATION', 'codex-cli process tree termination could not be verified', {
+        backend: 'codex-cli', cause,
+      });
+    },
+  });
+  const shared = {
+    readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+    createAuditorBackendFn: failingBackend,
+    recordHookEventFn: async ({ event }) => { events.push(event); },
+    writeOutput: (text) => out.push(text),
+    writeError: (text) => errOut.push(text),
+    runtimeErrorObserver: async (kind) => observations.push(kind),
+    auditorAvailabilityObserver: async (input) => availability.push(input),
+  };
+  try {
+    await runCodexUserPromptSubmitHook({
+      ...shared,
+      readInput: async () => ({
+        cwd: project, session_id: 'codex-termination', transcript_path: '/tmp/codex-termination.jsonl',
+        prompt: 'GeForce 5000 番台について既知の罠を調べて',
+      }),
+    });
+    await runCodexStopHook({
+      ...shared,
+      readInput: async () => ({
+        cwd: project, session_id: 'codex-termination', transcript_path: '/tmp/codex-termination.jsonl',
+        last_assistant_message: 'GPU について断定しました。'.repeat(20),
+      }),
+      readCodexToolUsageFn: async () => ({ usedTools: [], anomalies: [], stats: {} }),
+    });
+    assert.deepEqual(events.map((event) => [event.hook, event.status, event.code]), [
+      ['UserPromptSubmit', 'error', 'E_SPOTTER_AUDIT_GENERIC'],
+      ['Stop', 'error', 'E_SPOTTER_AUDIT_GENERIC'],
+    ]);
+    for (const event of events) {
+      assert.equal(event.internalCode, 'E_CODEX_CLI_TERMINATION');
+      assert.equal(event.causeCode, 'E_PROCESS_TREE_TERMINATION');
+      assert.equal(event.causeExitCode, 1);
+    }
+    assert.doesNotMatch(out.join('') + errOut.join(''), /E_CODEX_CLI_TERMINATION|E_PROCESS_TREE_TERMINATION|taskkill/);
+    assert.doesNotMatch(JSON.stringify(events), /AI_SENTINEL|taskkill|could not be verified/);
+    assert.deepEqual(observations, ['auditor_unavailable', 'auditor_unavailable']);
+    assert.deepEqual(availability, []);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test('runCodexUserPromptSubmitHook: model policy creation error maps to fixed generic diagnostics', async () => {
   const project = await makeProject();
     const out = [];
