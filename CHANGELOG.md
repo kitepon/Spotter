@@ -3,6 +3,13 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.5 — 2026-10-10
+
+- Claude / CodexのStop監査がfindingを出した時の固定`systemMessage`（「Spotter は直前の応答について利用可能ツールの
+  確認候補を記録しました。」）を出さない。どのツールの話かを含まず、読んでも対応できない知らせだった。
+  findingは従来どおり構造hook eventへ記録する。hookはfindingについてstdout・stderrへ何も出さない。
+  監査が失敗した時の固定の知らせと、UserPromptSubmitの提案は変えていない。
+
 ## 1.9.4 — 2026-10-09
 
 - Windowsで、監査の制限時間と同時にCodexが自分で終わった時、`taskkill`がrootを見つけられず（exit 128）、

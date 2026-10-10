@@ -38,8 +38,6 @@ const FAILURE_OUTPUTS = Object.freeze({
   }),
 });
 
-export const STOP_FINDING_SYSTEM_MESSAGE = 'Spotter は直前の応答について利用可能ツールの確認候補を記録しました。';
-
 export function projectParentAdvice(toolIds) {
   const accepted = projectToolIds(toolIds);
   if (accepted.length === 0) return '';

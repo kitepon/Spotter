@@ -1134,7 +1134,7 @@ test('runCodexStopHook: records a finding without delivering it to the next prom
       writeOutput: (text) => stopOut.push(text),
     });
 
-    assert.match(JSON.parse(stopOut.join('')).systemMessage, /確認候補を記録/);
+    assert.equal(stopOut.join(''), '');
 
     await runCodexUserPromptSubmitHook({
       readInput: async () => ({

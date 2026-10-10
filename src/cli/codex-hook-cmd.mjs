@@ -21,7 +21,6 @@ import {
 } from '../hooks/lib.mjs';
 import { discardLegacyPending } from '../hooks/pending-context.mjs';
 import {
-  STOP_FINDING_SYSTEM_MESSAGE,
   projectBackendFailure,
   projectParentAdvice,
   projectToolIds,
@@ -427,7 +426,7 @@ export async function runCodexStopHook({
     return;
   }
 
-  writeCodexSystemMessage({ systemMessage: STOP_FINDING_SYSTEM_MESSAGE, writeOutput });
+  // A finding is recorded only. The hook prints nothing for it.
   await recordCodexHookEventSafe(recordHookEventFn, {
     projectRoot,
     event: {

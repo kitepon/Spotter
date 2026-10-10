@@ -214,8 +214,8 @@ Spotter子backendのhookを除外する。Claude互換hookへ同じGrokイベン
   - daemon may early-pass with `reason:"short_final_no_tools"` when final ≤120 chars and used_tools is empty
     (`SPOTTER_STOP_SHORT_FINAL_MAX_CHARS` to tune; `<= 0` disables).
   - on `pass:false`, **does NOT** return `decision:"block"` and writes no pending context. It records
-    catalog-matched tool IDs as structured event data and may emit only a fixed, non-imperative
-    `systemMessage`. The next `UserPromptSubmit` receives nothing from this finding.
+    catalog-matched tool IDs as structured event data and prints nothing: no `systemMessage`, no stdout,
+    no stderr. The next `UserPromptSubmit` receives nothing from this finding.
   - `stop_hook_active:true` triggers daemon early-pass; no model-facing output is produced.
   - backend / transport errors record `status:"degraded"` and **exit 0** (no continuation forced —
     a Stop exit 2 would block the model from stopping). The Hook immediately emits an allow-listed fixed
