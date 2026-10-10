@@ -695,8 +695,7 @@ test('runStop: pass:false emits fixed notice and records only structured safe to
     });
     const path = pendingPath({ projectRoot: project, sessionId: 's-defer' });
     await assert.rejects(stat(path), (err) => err.code === 'ENOENT');
-    assert.match(JSON.parse(output).systemMessage, /確認候補を記録/);
-    assert.doesNotMatch(output, /既知の罠を確認する必要がある|mcp__caveat__caveat_search/);
+    assert.equal(output, '');
     assert.equal(events.length, 1);
     assert.equal(events[0].status, 'finding');
     assert.deepEqual(events[0].missingTools, ['mcp__caveat__caveat_search']);
@@ -1002,8 +1001,7 @@ test('runStop: obsolete finding persistence callback cannot affect structured ou
         writeError: (text) => { stderr += text; },
       });
       assert.equal(stderr, '');
-      assert.match(JSON.parse(output).systemMessage, /確認候補を記録/);
-      assert.doesNotMatch(output, /must be visible|mcp__required/);
+      assert.equal(output, '');
       assert.equal(events.length, 1);
       assert.equal(events[0].status, 'finding');
       assert.equal(events[0].pass, false);
@@ -1036,7 +1034,7 @@ test('runStop: finding marker race stays non-blocking and does not persist conte
       writeError: (text) => { stderr += text; },
     });
     assert.equal(stderr, '');
-    assert.match(JSON.parse(output).systemMessage, /確認候補を記録/);
+    assert.equal(output, '');
     assert.equal(events.length, 1);
     assert.equal(events[0].status, 'finding');
     assert.deepEqual(events[0].missingTools, ['mcp__required']);

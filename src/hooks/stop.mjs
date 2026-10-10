@@ -13,7 +13,7 @@ import {
 } from './lib.mjs';
 import { getLastAssistantText } from './transcript-reader.mjs';
 import { sendRequest } from '../daemon/transport.mjs';
-import { STOP_FINDING_SYSTEM_MESSAGE, projectBackendFailure, projectToolIds } from './parent-output-projector.mjs';
+import { projectBackendFailure, projectToolIds } from './parent-output-projector.mjs';
 
 const TIMEOUT_MS = 50_000;
 
@@ -114,7 +114,7 @@ export async function runStop({
     return; // nothing to defer
   }
 
-  writeOutput(JSON.stringify({ systemMessage: STOP_FINDING_SYSTEM_MESSAGE }));
+  // A finding is recorded only. The hook prints nothing for it.
   await recordHookEventFn({
     projectRoot,
     writeError: reportError,
