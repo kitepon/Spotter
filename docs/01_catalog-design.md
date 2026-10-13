@@ -119,6 +119,8 @@ logしない。DB自体のJSON/schema違反は
 
 例外として `claude.ai` ブランドの MCP サーバー (Gmail / Calendar / Drive) は OAuth proxy 経由で動いており、credentials を読まない方針の Spotter からは description を live fetch できない。[src/tool-db/claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) に公式情報から起こした description を server 単位で手書きで保持し、[refresh.mjs](../src/tool-db/refresh.mjs) の `filterClaudeAiBaseline` で `claude mcp list` に該当サーバーが実在する環境のみ注入する (v1.1.4 以降)。これは例外であって規則ではない。
 
+baseline を持つこの 3 サーバーへは、refresh 時に問い合わせを送らない。`claude mcp list` はこれらを URL 付きで表示するが、Spotter は credentials を持たないため、送れるのは認証なしの問い合わせだけである。それが拒否されても応答されても、catalog は baseline だけで決まる。baseline を持たない `claude.ai` サーバーは他の HTTP / SSE サーバーと同じく認証なしで問い合わせ、拒否された時は log して飛ばす。
+
 ## description の取得フロー — 3 段階のキャッシュ DB
 
 セッション開始時、Spotter は **その host セッションで使える MCP / スキル / サブエージェント の一覧 (名前)** を取得する。利用可能ツールはhostごとに違うため、ローカル DB を分ける。
@@ -165,7 +167,7 @@ logしない。DB自体のJSON/schema違反は
 | 対象 | 実装 | 取得元 |
 |---|---|---|
 | MCP (stdio / HTTP / SSE) | [investigate-mcp.mjs](../src/tool-db/investigate-mcp.mjs) + [investigate-mcp-http.mjs](../src/tool-db/investigate-mcp-http.mjs) | `claude mcp list` (membership 権威) + 公式 3 scope の env 込み merge: User (`~/.claude.json` 直下 `mcpServers`) / Project (`<projectRoot>/.mcp.json`) / Local (`~/.claude.json` `projects[<root>].mcpServers`)、precedence は Local > Project > User、加えて legacy `~/.claude/.mcp.json` を最下位で互換保持 (v1.2.1 以降)。各サーバーに `tools/list` JSON-RPC |
-| claude.ai MCP (OAuth) | [claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) + [refresh.mjs](../src/tool-db/refresh.mjs) の `filterClaudeAiBaseline` | 手書き baseline (Gmail / Calendar / Drive の 25 件) を server 単位で保持し、`claude mcp list` に該当サーバーが実在する環境のみ注入 (v1.1.4 以降) |
+| claude.ai MCP (OAuth) | [claude-ai-baseline.mjs](../src/tool-db/claude-ai-baseline.mjs) + [refresh.mjs](../src/tool-db/refresh.mjs) の `filterClaudeAiBaseline` | 手書き baseline (Gmail / Calendar / Drive の 25 件) を server 単位で保持し、`claude mcp list` に該当サーバーが実在する環境のみ注入 (v1.1.4 以降)。この 3 サーバーへは `tools/list` を送らない |
 | スキル | [investigate-skills.mjs](../src/tool-db/investigate-skills.mjs) | user scope `~/.claude/skills/`、project scope `<projectRoot>/.claude/skills/`、有効化プラグインの `skills/` |
 | サブエージェント | [investigate-agents.mjs](../src/tool-db/investigate-agents.mjs) | user scope `~/.claude/agents/`、project scope `<projectRoot>/.claude/agents/`、有効化プラグインの `agents/` |
 
