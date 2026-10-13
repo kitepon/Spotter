@@ -27,7 +27,12 @@ export function filterClaudeAiBaseline(presentServerNames) {
 //   - Sub-agents from user scope, project scope, and enabled plugins
 //
 // Returns an in-memory snapshot the caller can use as the investigate() backend.
-export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin = 'claude', projectRoot } = {}) {
+export async function buildInvestigationSnapshot({
+  logFn = () => {},
+  claudeBin = 'claude',
+  projectRoot,
+  listMcpServersFn = listMcpServers,
+} = {}) {
   const snapshot = new Map();
 
   // Anthropic-provided `claude.ai ...` MCP servers. Hardcoded because the OAuth proxy
@@ -35,7 +40,7 @@ export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin =
   // Injected only for servers actually present in `claude mcp list` — otherwise phantom
   // tools (Gmail/Calendar/Drive) leak into environments where those servers are not
   // connected. See filterClaudeAiBaseline above.
-  const servers = await listMcpServers({ claudeBin, projectRoot });
+  const servers = await listMcpServersFn({ claudeBin, projectRoot });
   const presentServerNames = new Set(servers.map((s) => s.name));
   const baseline = filterClaudeAiBaseline(presentServerNames);
   for (const [name, description] of baseline) {
@@ -47,7 +52,16 @@ export async function buildInvestigationSnapshot({ logFn = () => {}, claudeBin =
 
   // MCP servers (stdio + user-registered HTTP/SSE). projectRoot forwards for
   // project-scope `.mcp.json` merge (see mcp-config.mjs).
-  const mcp = await listMcpToolsAll({ logFn, claudeBin, projectRoot });
+  //
+  // Servers the baseline covers are not contacted. Spotter holds no credentials for
+  // them, so a query is unauthenticated: it either fails, or returns a tool list that
+  // would silently replace the baseline with whatever the provider serves to anonymous
+  // callers. Either way the catalog would follow the provider's access policy instead
+  // of the baseline, so the baseline is the only source for these servers.
+  const baselineServerNames = new Set(getClaudeAiBaselineByServer().keys());
+  const mcp = await listMcpToolsAll({
+    logFn, claudeBin, projectRoot, servers, skipServerNames: baselineServerNames,
+  });
   for (const [serverName, tools] of mcp.entries()) {
     for (const tool of tools) {
       if (!tool.description || tool.description.length === 0) continue;

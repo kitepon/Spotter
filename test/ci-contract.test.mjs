@@ -16,7 +16,7 @@ test('Markdown-only変更は製品所有の文書gateを必ず実行する', asy
 
   assert.equal(
     packageJson.scripts?.['verify:docs'],
-    'node scripts/verify-docs.mjs && node scripts/verify-packed-markdown.mjs && node --test test/ci-contract.test.mjs test/markdown-link-targets.test.mjs',
+    'node scripts/verify-docs.mjs && node scripts/verify-packed-markdown.mjs && node scripts/run-tests.mjs test/ci-contract.test.mjs test/markdown-link-targets.test.mjs',
   );
   for (const dependency of [
     'unified',

@@ -38,10 +38,21 @@ export class McpInvestigationError extends Error {
 
 // Returns: Map<server-name, Array<{name, description}>>.
 // Skips servers that fail (logs the failure) so one broken server doesn't block the rest.
-export async function listMcpToolsAll({ logFn = () => {}, claudeBin = 'claude', projectRoot } = {}) {
-  const servers = await listMcpServers({ claudeBin, projectRoot });
+//
+// `servers` lets a caller that already ran `listMcpServers` reuse that listing, so the
+// membership it acted on and the servers queried here cannot disagree. `skipServerNames`
+// are never contacted: no spawn, no HTTP request, no log line.
+export async function listMcpToolsAll({
+  logFn = () => {},
+  claudeBin = 'claude',
+  projectRoot,
+  servers,
+  skipServerNames = new Set(),
+} = {}) {
+  const listed = servers ?? await listMcpServers({ claudeBin, projectRoot });
   const out = new Map();
-  for (const server of servers) {
+  for (const server of listed) {
+    if (skipServerNames.has(server.name)) continue;
     try {
       const tools = await listMcpToolsOne({ server, logFn, claudeBin, projectRoot });
       out.set(server.name, tools);
@@ -152,8 +163,10 @@ export async function listMcpToolsOne({ server, logFn = () => {}, claudeBin = 'c
     return spawnAndQuery(config, server.name);
   }
   if (server.transport === 'http' || server.transport === 'sse') {
-    // For `claude.ai ...` servers, CLI reports http/sse but they are NOT in local
-    // .mcp.json — covered by src/tool-db/claude-ai-baseline.mjs at a higher layer.
+    // `claude.ai ...` servers are reported as http/sse by the CLI but are NOT in local
+    // .mcp.json, so they arrive here without credentials. The ones with a hardcoded
+    // baseline (src/tool-db/claude-ai-baseline.mjs) are excluded before this point by
+    // investigate-claude.mjs; the rest are asked unauthenticated and skipped on refusal.
     if (!server.url) {
       throw new McpInvestigationError(`no URL available for ${server.transport} server`, server.name);
     }
