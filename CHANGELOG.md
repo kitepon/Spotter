@@ -3,6 +3,24 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.6 — 2026-10-14
+
+- 固定の道具一覧（baseline）を持つ`claude.ai`のMCPサーバー（Gmail・Google Calendar・Google Drive）へ、refresh時に
+  問い合わせを送らない。これまでは`install`・`db refresh`・`db rebuild`と、ClaudeのSessionStart hookが起こす
+  `db refresh`のたびに、認証なしの`initialize`と`notifications/initialized`をこの3サーバーへ送っていた。
+  Spotterはcredentialsを持たないので、問い合わせが拒否されても応答されても、catalogはbaselineだけで決まる。
+  catalogと監査へ渡る内容は変わらない。1回のrefreshで`claude mcp list`を実行する回数は2回から1回になる。
+  baselineを持たない`claude.ai`サーバーへは、従来どおり認証なしで問い合わせ、拒否された時はlogして飛ばす。
+- `npm test`（`scripts/run-tests.mjs`）が試験を探す起点をこのrepoへ固定する。明示できる対象は、symlinkを解いた後で
+  repo内にある実在fileだけ。空の引数、ディレクトリ、glob、repo外を指すpathやsymlinkは、何も起動せずexit 2で断る。
+  Node 26は空の引数を現在のディレクトリからの探索として読むため、変数が空のまま渡るとrepoの外の試験まで
+  実行されていた。
+- 同じrunnerが子processの環境を許可した名前だけで作る。呼び手の認証変数と、道具の設定・状態の置き場を指す変数は
+  渡さない。HOME / USERPROFILE（Windowsは`APPDATA` / `LOCALAPPDATA`も）を一時ホームへ向け、PATHの先頭へ
+  `claude`・`codex`・`grok`・`cursor-agent`・`cursor`の代役（何も起動せず127で終わる）を置く。代役はPATH上の名前に
+  当たるだけで、絶対pathでの呼び出しと、`node`以外のprogramの通信は止めない。
+- `npm run verify:docs`の2試験も同じrunnerを通す。
+
 ## 1.9.5 — 2026-10-10
 
 - Claude / CodexのStop監査がfindingを出した時の固定`systemMessage`（「Spotter は直前の応答について利用可能ツールの
