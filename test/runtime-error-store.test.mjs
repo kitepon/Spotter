@@ -583,13 +583,185 @@ test('runtime worker rejects extra fields, mismatched receipt IDs, and non-canon
 });
 
 test('Windows ACL script rebuilds current-SID-only DACL and verifies readback', () => {
-  const script = buildWindowsAclPowerShell({ directory: false });
+  const script = buildWindowsAclPowerShell();
   assert.match(script, /SetAccessRuleProtection\(\$true, \$false\)/);
   assert.match(script, /SecurityIdentifier/);
-  assert.match(script, /Set-Acl -LiteralPath/);
   assert.match(script, /Get-Acl -LiteralPath/);
   assert.match(script, /AccessControlType/);
   assert.doesNotMatch(script, /Everyone|Authenticated Users|BUILTIN\\Users/);
+});
+
+test('Windows ACL script reads first, skips a private target, and never writes the Audit section', () => {
+  const script = buildWindowsAclPowerShell();
+  // Set-Acl writes Audit first and mis-detects a protected target without SeSecurityPrivilege.
+  assert.doesNotMatch(script, /Set-Acl/);
+  assert.doesNotMatch(script, /AuditRule|AccessControlSections|SeSecurityPrivilege/);
+  assert.ok(script.includes('[System.IO.FileSystemAclExtensions]::SetAccessControl($info, $acl)'));
+  assert.ok(script.includes('[System.IO.DirectoryInfo]::new($target)'));
+  assert.ok(script.includes('[System.IO.FileInfo]::new($target)'));
+  // Directories are inheritable ContainerInherit|ObjectInherit; files carry no inheritance.
+  assert.match(script, /ContainerInherit -bor \[System\.Security\.AccessControl\.InheritanceFlags\]::ObjectInherit/);
+  // Each item: read, compare, write only when it differs, then read back and compare again.
+  const firstCheck = script.indexOf('& $check $current $inheritance');
+  const write = script.indexOf('SetAccessControl($info, $acl)');
+  const readback = script.indexOf('& $check (Get-Acl -LiteralPath $target) $inheritance');
+  assert.ok(firstCheck > 0 && firstCheck < write && write < readback, 'check, write, then readback check');
+  // The expected kind is enforced: a file where a directory is expected (or the reverse) is refused.
+  assert.match(script, /Test-Path -LiteralPath \$target -PathType Container\) -ne \$directory\) \{ exit 7 \}/);
+  // Owner is written only when it differs, so WRITE_OWNER is not required for an owned target.
+  assert.match(script, /GetOwner\(\[System\.Security\.Principal\.SecurityIdentifier\]\)\.Value -ne \$sid\.Value\) \{ \$acl\.SetOwner\(\$sid\) \}/);
+  for (const code of ['exit 7', 'exit 3', 'exit 4', 'exit 1']) assert.ok(script.includes(code), code);
+});
+
+const FAKE_POWERSHELL_SKIP = process.platform === 'win32';
+
+async function fakePowerShell(t, body) {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-fake-pwsh-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'pwsh');
+  await writeFile(path, `#!/bin/sh\n${body}\n`);
+  await chmod(path, 0o755);
+  return path;
+}
+
+test('private ACL failures report a fixed reason and never the child output or path', {
+  skip: FAKE_POWERSHELL_SKIP,
+}, async (t) => {
+  const cases = [
+    ['exit 1', 'script-error'],
+    ['exit 3', 'access-denied'],
+    ['exit 4', 'privilege-not-held'],
+    ['exit 7', 'readback-mismatch'],
+    ['exit 42', 'exit-unexpected'],
+  ];
+  for (const [body, reason] of cases) {
+    const box = await sandbox();
+    t.after(() => rm(box.root, { recursive: true, force: true }));
+    const powerShellPath = await fakePowerShell(t, `echo SENTINEL_SECRET_OUTPUT >&2\n${body}`);
+    await assert.rejects(
+      prepareRuntimeErrorStoreDirectory(options(box, { platform: 'win32', powerShellPath })),
+      (error) => {
+        assert.equal(error.code, 'E_RUNTIME_ERROR_STORE');
+        assert.equal(error.aclReason, reason);
+        assert.equal(error.message, `private ACL operation failed: ${reason}`);
+        assert.doesNotMatch(error.message, /SENTINEL_SECRET_OUTPUT/);
+        assert.ok(!error.message.includes(box.root));
+        return true;
+      },
+      body,
+    );
+  }
+});
+
+test('private ACL helper reports timeout and spawn failure as distinct fixed reasons', {
+  skip: FAKE_POWERSHELL_SKIP,
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  const slow = await fakePowerShell(t, 'sleep 30');
+  await assert.rejects(
+    prepareRuntimeErrorStoreDirectory(options(box, { platform: 'win32', powerShellPath: slow, aclTimeoutMs: 150 })),
+    { aclReason: 'timeout' },
+  );
+  await assert.rejects(
+    prepareRuntimeErrorStoreDirectory(options(box, {
+      platform: 'win32', powerShellPath: join(box.root, 'no-such-powershell'),
+    })),
+    { aclReason: 'spawn-failed' },
+  );
+});
+
+test('private ACL helper accepts a zero exit without further work', {
+  skip: FAKE_POWERSHELL_SKIP,
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  const powerShellPath = await fakePowerShell(t, 'exit 0');
+  await prepareRuntimeErrorStoreDirectory(options(box, { platform: 'win32', powerShellPath }));
+});
+
+// A standard-user Windows account pays about 0.7 s for each PowerShell start, and the isolated
+// observer has a 4.25 s budget. These tests pin the number of starts and the order of targets
+// each store operation hands to one start; every read still verifies and repairs.
+async function countingPowerShell(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-count-pwsh-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const log = join(dir, 'items.log');
+  const path = join(dir, 'pwsh');
+  await writeFile(path, `#!/bin/sh\nprintf '%s\\n' "$SPOTTER_ACL_ITEMS" >> '${log}'\nexit 0\n`);
+  await chmod(path, 0o755);
+  await writeFile(log, '');
+  const calls = async () => (await readFile(log, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const reset = () => writeFile(log, '');
+  return { path, calls, reset };
+}
+
+test('Windows store operations hand every ACL target to as few PowerShell starts as possible, in order', {
+  skip: FAKE_POWERSHELL_SKIP,
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  const fake = await countingPowerShell(t);
+  const opts = options(box, { platform: 'win32', powerShellPath: fake.path });
+  const directory = join(box.root, 'spotter');
+  const lock = runtimeErrorLockPath(box.storePath);
+  const shape = (call) => call.map((item) => [item.path, item.directory]);
+
+  await prepareRuntimeErrorStoreDirectory(opts);
+  assert.deepEqual((await fake.calls()).map(shape), [[[directory, true]]]);
+
+  // Fresh store: directory and lock together, then the new store file.
+  await fake.reset();
+  await observeRuntimeError('daemon_transport', opts);
+  assert.deepEqual((await fake.calls()).map(shape), [
+    [[directory, true], [lock, false]],
+    [[box.storePath, false]],
+  ]);
+
+  // Existing store: the directory is not verified a second time inside the operation, but the
+  // store file is verified before reading and again after the write.
+  await fake.reset();
+  await observeRuntimeError('daemon_transport', opts);
+  assert.deepEqual((await fake.calls()).map(shape), [
+    [[directory, true], [lock, false]],
+    [[box.storePath, false]],
+    [[box.storePath, false]],
+  ]);
+
+  // Plain reads still verify and repair the directory and the file on every access.
+  await fake.reset();
+  await readRuntimeErrorSnapshot(opts);
+  assert.deepEqual((await fake.calls()).map(shape), [[[directory, true], [box.storePath, false]]]);
+  await fake.reset();
+  await readRuntimeErrorStoreStatus(opts);
+  assert.deepEqual((await fake.calls()).map(shape), [[[directory, true], [box.storePath, false]]]);
+});
+
+test('Windows read of an absent store still repairs the directory once', {
+  skip: FAKE_POWERSHELL_SKIP,
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  await mkdir(join(box.root, 'spotter'), { recursive: true });
+  const fake = await countingPowerShell(t);
+  const snapshot = await readRuntimeErrorSnapshot(options(box, { platform: 'win32', powerShellPath: fake.path }));
+  assert.deepEqual(snapshot.records, []);
+  assert.deepEqual((await fake.calls()).map((call) => call.map((item) => [item.path, item.directory])), [
+    [[join(box.root, 'spotter'), true]],
+  ]);
+});
+
+test('a failed Windows ACL start for the directory stops the operation before the store is touched', {
+  skip: FAKE_POWERSHELL_SKIP,
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  const failing = await fakePowerShell(t, 'exit 7');
+  await assert.rejects(
+    observeRuntimeError('daemon_transport', options(box, { platform: 'win32', powerShellPath: failing })),
+    { aclReason: 'readback-mismatch' },
+  );
+  await assert.rejects(readFile(box.storePath), { code: 'ENOENT' });
 });
 
 test('Windowsの実PowerShell 7で保存directoryとfileのACLを設定し読み戻す', {
@@ -601,6 +773,78 @@ test('Windowsの実PowerShell 7で保存directoryとfileのACLを設定し読み
   assert.equal(result.collected, true);
   const snapshot = await readRuntimeErrorSnapshot(options(box));
   assert.equal(snapshot.records[0].occurrence_count, 1);
+});
+
+// Reads the ACL back through an independent PowerShell process so the tests do not trust the
+// helper's own verification.
+async function readWindowsAcl(path) {
+  const script = [
+    '$acl = Get-Acl -LiteralPath $env:SPOTTER_ACL_PROBE_PATH',
+    '$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
+    '$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))',
+    '[Console]::Out.Write((@{ sid = $sid; owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value; protected = [bool]$acl.AreAccessRulesProtected; entries = @($rules | ForEach-Object { @{ identity = $_.IdentityReference.Value; type = $_.AccessControlType.ToString(); inherited = [bool]$_.IsInherited; full = (($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl) } }) } | ConvertTo-Json -Compress -Depth 4))',
+  ].join('; ');
+  const { stdout } = await execFileAsync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    env: { ...process.env, SPOTTER_ACL_PROBE_PATH: path },
+  });
+  const acl = JSON.parse(stdout);
+  return { ...acl, entries: [acl.entries].flat() };
+}
+
+function assertPrivateAcl(acl, label) {
+  assert.equal(acl.owner, acl.sid, `${label}: owner`);
+  assert.equal(acl.protected, true, `${label}: inheritance blocked`);
+  assert.equal(acl.entries.length, 1, `${label}: one ACE`);
+  assert.deepEqual(acl.entries[0], { identity: acl.sid, type: 'Allow', inherited: false, full: true }, label);
+}
+
+test('Windows private ACL re-apply on an already-protected directory and file succeeds without administrator privileges', {
+  skip: process.platform !== 'win32',
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  const directory = join(box.root, 'spotter');
+  // Each call after the first meets a protected DACL, which Set-Acl rejected without
+  // SeSecurityPrivilege.
+  for (let round = 1; round <= 3; round += 1) {
+    await prepareRuntimeErrorStoreDirectory(options(box));
+    assertPrivateAcl(await readWindowsAcl(directory), `directory round ${round}`);
+  }
+  for (let round = 1; round <= 3; round += 1) {
+    const result = await observeRuntimeError('daemon_transport', options(box));
+    assert.equal(result.collected, true, `observe round ${round}`);
+    assertPrivateAcl(await readWindowsAcl(directory), `directory after observe ${round}`);
+    assertPrivateAcl(await readWindowsAcl(box.storePath), `store file after observe ${round}`);
+    assertPrivateAcl(await readWindowsAcl(runtimeErrorLockPath(box.storePath)), `lock file after observe ${round}`);
+  }
+  const snapshot = await readRuntimeErrorSnapshot(options(box));
+  assert.equal(snapshot.records[0].occurrence_count, 3);
+});
+
+test('Windows private ACL re-apply removes a third-party ACE instead of skipping the protected target', {
+  skip: process.platform !== 'win32',
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  await observeRuntimeError('daemon_transport', options(box));
+  assertPrivateAcl(await readWindowsAcl(box.storePath), 'before');
+  const grant = [
+    '$acl = Get-Acl -LiteralPath $env:SPOTTER_ACL_PROBE_PATH',
+    '$everyone = New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0")',
+    '$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($everyone, "ReadAndExecute", "None", "None", "Allow")',
+    '$acl.AddAccessRule($rule)',
+    '[System.IO.FileSystemAclExtensions]::SetAccessControl([System.IO.FileInfo]::new($env:SPOTTER_ACL_PROBE_PATH), $acl)',
+  ].join('; ');
+  await execFileAsync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', grant], {
+    env: { ...process.env, SPOTTER_ACL_PROBE_PATH: box.storePath },
+  });
+  const widened = await readWindowsAcl(box.storePath);
+  assert.ok(widened.entries.some((entry) => entry.identity === 'S-1-1-0'), 'the third-party ACE was added');
+
+  // The next store access must repair it, not trust the protected flag.
+  const snapshot = await readRuntimeErrorSnapshot(options(box));
+  assert.equal(snapshot.records.length, 1);
+  assertPrivateAcl(await readWindowsAcl(box.storePath), 'after repair');
 });
 
 test('runtime error safe observer never stops Spotter and emits one fixed diagnostic', async () => {
