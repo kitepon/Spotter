@@ -252,7 +252,7 @@ export async function observeAuditorAvailability(input, options = {}) {
   const storePath = options.storePath ?? defaultRuntimeErrorStorePath(options);
   const statePath = auditorAvailabilityPath(storePath);
   return enqueue(storePath, async () => {
-    await ensurePrivateDirectory(dirname(storePath), options);
+    await ensurePrivateStoreArea(storePath, options);
     return withStoreLock(runtimeErrorLockPath(storePath), options, async () => {
       const state = await readAvailabilityState(statePath, options);
       const streak = state.streaks[backend];
@@ -276,7 +276,7 @@ export async function observeAuditorAvailability(input, options = {}) {
         // cannot count the same outage twice.
         const observationId = createHash('sha256')
           .update(`auditor_unrecovered\n${backend}\n${current.first_failed_at}`, 'utf8').digest('hex').slice(0, 32);
-        const store = await readStore(storePath, options);
+        const store = await readStore(storePath, options, { directoryVerified: true });
         applyObservation(store, definition, fingerprint, observationId, { ...options, now: () => timestamp });
         validateStore(store);
         const atomicWriteFn = options.atomicWriteFn ?? atomicWriteStore;
@@ -675,11 +675,10 @@ export async function readRuntimeErrorStoreStatus(options = {}) {
 
 async function mutateStore(storePath, options, mutate) {
   return enqueue(storePath, async () => {
-    const directory = dirname(storePath);
-    await ensurePrivateDirectory(directory, options);
+    await ensurePrivateStoreArea(storePath, options);
     const lockPath = runtimeErrorLockPath(storePath);
     return withStoreLock(lockPath, options, async () => {
-      const store = await readStore(storePath, options);
+      const store = await readStore(storePath, options, { directoryVerified: true });
       const result = mutate(store);
       validateStore(store);
       const atomicWriteFn = options.atomicWriteFn ?? atomicWriteStore;
@@ -693,8 +692,8 @@ export function runtimeErrorLockPath(storePath) {
   return `${storePath}.lock.sqlite`;
 }
 
+// The caller has already run ensurePrivateStoreArea for this store.
 async function withStoreLock(lockPath, options, operation) {
-  await ensurePrivateLockFile(lockPath, options);
   const database = new DatabaseSync(lockPath);
   let active = false;
   try {
@@ -711,7 +710,7 @@ async function withStoreLock(lockPath, options, operation) {
   }
 }
 
-async function ensurePrivateLockFile(lockPath, options) {
+async function createPrivateLockFile(lockPath) {
   let handle;
   try {
     handle = await open(lockPath, 'wx', 0o600);
@@ -721,10 +720,21 @@ async function ensurePrivateLockFile(lockPath, options) {
   } finally {
     await handle?.close().catch(() => {});
   }
-  await enforcePrivatePath(lockPath, options, {
-    directory: false,
-    repair: (options.platform ?? process.platform) === 'win32',
-  });
+}
+
+// Directory, then lock file. On Windows both are applied by one PowerShell start, so the
+// empty lock file is created before the directory ACL is replaced; it holds no data, and the
+// store file is only created afterwards, inside the private directory.
+async function ensurePrivateStoreArea(storePath, options) {
+  const directory = dirname(storePath);
+  const lockPath = runtimeErrorLockPath(storePath);
+  const windows = (options.platform ?? process.platform) === 'win32';
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  if (!windows) await enforcePrivatePath(directory, options, { directory: true, repair: true });
+  await createPrivateLockFile(lockPath);
+  await enforcePrivatePaths(windows
+    ? [{ path: directory, directory: true, repair: true }, { path: lockPath, directory: false, repair: true }]
+    : [{ path: lockPath, directory: false, repair: false }], options);
 }
 
 async function atomicWriteStore(storePath, bytes, options = {}) {
@@ -745,10 +755,10 @@ async function atomicWriteStore(storePath, bytes, options = {}) {
   }
 }
 
-async function readStore(storePath, options = {}, { missingOk = true } = {}) {
+async function readStore(storePath, options = {}, { missingOk = true, directoryVerified = false } = {}) {
   let raw;
   try {
-    raw = decodeUtf8(await readPrivateFile(storePath, options, { enforceWindowsAcl: true }));
+    raw = decodeUtf8(await readPrivateFile(storePath, options, { enforceWindowsAcl: true, directoryVerified }));
   } catch (error) {
     if (missingOk && error?.code === 'ENOENT') return emptyStore();
     throw error;
@@ -768,15 +778,29 @@ async function ensurePrivateDirectory(directory, options) {
   await enforcePrivatePath(directory, options, { directory: true, repair: true });
 }
 
-async function readPrivateFile(path, options, { enforceWindowsAcl }) {
+// `directoryVerified` is set only by a caller that enforced this file's directory earlier in
+// the same operation, before taking the store lock.
+async function readPrivateFile(path, options, { enforceWindowsAcl, directoryVerified = false }) {
   const platform = options.platform ?? process.platform;
-  if (enforceWindowsAcl) {
-    await enforcePrivatePath(dirname(path), options, { directory: true, repair: platform === 'win32' });
-  }
-  let info = await lstat(path);
-  validatePrivateStat(info, options, { directory: false, platform });
+  const directory = dirname(path);
+  let info;
   if (enforceWindowsAcl && platform === 'win32') {
-    await enforcePrivatePath(path, options, { directory: false, repair: true });
+    try {
+      info = await lstat(path);
+    } catch (error) {
+      if (!directoryVerified) await enforcePrivatePath(directory, options, { directory: true, repair: true });
+      throw error;
+    }
+    validatePrivateStat(info, options, { directory: false, platform });
+    // Directory first, then the file, in one PowerShell start.
+    await enforcePrivatePaths([
+      ...(directoryVerified ? [] : [{ path: directory, directory: true, repair: true }]),
+      { path, directory: false, repair: true },
+    ], options);
+    info = await lstat(path);
+    validatePrivateStat(info, options, { directory: false, platform });
+  } else {
+    if (enforceWindowsAcl) await enforcePrivatePath(directory, options, { directory: true, repair: false });
     info = await lstat(path);
     validatePrivateStat(info, options, { directory: false, platform });
   }
@@ -794,10 +818,19 @@ async function readPrivateFile(path, options, { enforceWindowsAcl }) {
   }
 }
 
+async function enforcePrivatePaths(entries, options) {
+  if ((options.platform ?? process.platform) === 'win32') {
+    const repaired = entries.filter((entry) => entry.repair);
+    if (repaired.length > 0) await runWindowsAcl(repaired, options);
+    return;
+  }
+  for (const entry of entries) await enforcePrivatePath(entry.path, options, entry);
+}
+
 async function enforcePrivatePath(path, options, { directory, repair }) {
   const platform = options.platform ?? process.platform;
   if (platform === 'win32') {
-    if (repair) await runWindowsAcl(path, { directory }, options);
+    if (repair) await runWindowsAcl([{ path, directory }], options);
     return;
   }
   const initialInfo = await lstat(path);
@@ -839,26 +872,27 @@ const ACL_EXIT_REASONS = new Map([
   [7, 'readback-mismatch'],
 ]);
 
-export function buildWindowsAclPowerShell({ directory }) {
-  const securityType = directory ? 'DirectorySecurity' : 'FileSecurity';
-  const infoType = directory ? 'System.IO.DirectoryInfo' : 'System.IO.FileInfo';
-  const inheritance = directory
-    ? '[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit'
-    : '[System.Security.AccessControl.InheritanceFlags]::None';
+export function buildWindowsAclPowerShell() {
+  const fileInheritance = '[System.Security.AccessControl.InheritanceFlags]::None';
+  const directoryInheritance = '[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit';
   return [
     '$ErrorActionPreference = "Stop"',
-    'try { $target = $env:SPOTTER_ACL_PATH',
-    '$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User',
-    `$inheritance = ${inheritance}`,
-    '$check = { param($path) $acl = Get-Acl -LiteralPath $path; $entries = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])); $acl.AreAccessRulesProtected -and $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $entries.Count -eq 1 -and $entries[0].IdentityReference.Value -eq $sid.Value -and $entries[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and -not $entries[0].IsInherited -and (($entries[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl) -and $entries[0].InheritanceFlags -eq $inheritance -and $entries[0].PropagationFlags -eq [System.Security.AccessControl.PropagationFlags]::None }',
-    'if (-not (& $check $target)) { $current = Get-Acl -LiteralPath $target',
-    `$acl = New-Object System.Security.AccessControl.${securityType}`,
+    'try { $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User',
+    '$check = { param($acl, $inheritance) $entries = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])); $acl.AreAccessRulesProtected -and $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $entries.Count -eq 1 -and $entries[0].IdentityReference.Value -eq $sid.Value -and $entries[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and -not $entries[0].IsInherited -and (($entries[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl) -and $entries[0].InheritanceFlags -eq $inheritance -and $entries[0].PropagationFlags -eq [System.Security.AccessControl.PropagationFlags]::None }',
+    'foreach ($item in @($env:SPOTTER_ACL_ITEMS | ConvertFrom-Json)) { $target = [string]$item.path; $directory = [bool]$item.directory',
+    'if ((Test-Path -LiteralPath $target -PathType Container) -ne $directory) { exit 7 }',
+    `if ($directory) { $inheritance = ${directoryInheritance} } else { $inheritance = ${fileInheritance} }`,
+    '$current = Get-Acl -LiteralPath $target',
+    'if (-not (& $check $current $inheritance)) {',
+    'if ($directory) { $acl = New-Object System.Security.AccessControl.DirectorySecurity } else { $acl = New-Object System.Security.AccessControl.FileSecurity }',
     'if ($current.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { $acl.SetOwner($sid) }',
     '$acl.SetAccessRuleProtection($true, $false)',
     '$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, "FullControl", $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)',
     '$acl.AddAccessRule($rule)',
-    `[System.IO.FileSystemAclExtensions]::SetAccessControl([${infoType}]::new($target), $acl)`,
-    'if (-not (& $check $target)) { exit 7 }',
+    'if ($directory) { $info = [System.IO.DirectoryInfo]::new($target) } else { $info = [System.IO.FileInfo]::new($target) }',
+    '[System.IO.FileSystemAclExtensions]::SetAccessControl($info, $acl)',
+    'if (-not (& $check (Get-Acl -LiteralPath $target) $inheritance)) { exit 7 }',
+    '}',
     '}',
     '} catch { $e = $_.Exception',
     'while ($e.InnerException) { $e = $e.InnerException }',
@@ -869,12 +903,14 @@ export function buildWindowsAclPowerShell({ directory }) {
   ].join('; ');
 }
 
-async function runWindowsAcl(path, { directory }, options) {
+// One PowerShell start applies an ordered list of targets: starting PowerShell dominates the
+// cost of every store access on a standard-user Windows account.
+async function runWindowsAcl(items, options) {
   const executable = options.powerShellPath ?? WINDOWS_POWERSHELL_COMMAND;
-  const script = buildWindowsAclPowerShell({ directory });
-  await spawnForExit(executable, ['-NoProfile', '-NonInteractive', '-Command', script], {
+  const encoded = JSON.stringify(items.map(({ path, directory }) => ({ path, directory: directory === true })));
+  await spawnForExit(executable, ['-NoProfile', '-NonInteractive', '-Command', buildWindowsAclPowerShell()], {
     timeoutMs: options.aclTimeoutMs ?? 15_000,
-    env: { ...process.env, SPOTTER_ACL_PATH: path },
+    env: { ...process.env, SPOTTER_ACL_ITEMS: encoded },
   });
 }
 
