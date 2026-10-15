@@ -823,27 +823,49 @@ function validatePrivateStat(info, options, { directory, platform }) {
   if ((info.mode & 0o777) !== expectedMode) throw storeError('runtime error path mode is unsafe');
 }
 
+// Windows private ACL helper.
+//
+// Do not use `Set-Acl` here. It first writes every section including Audit, and when the
+// process lacks SeSecurityPrivilege (any non-administrator) it retries with a reduced set.
+// That retry drops Audit only when `sd.AreAuditRulesProtected == existing.AreAccessRulesProtected`,
+// so a target whose DACL is already protected is rejected on the second application. The
+// script therefore (1) reads the current ACL and does nothing when it is already private, and
+// (2) otherwise writes only the Access section, plus Owner when it differs, through
+// FileSystemAclExtensions.SetAccessControl, which persists exactly the modified sections.
+const ACL_EXIT_REASONS = new Map([
+  [1, 'script-error'],
+  [3, 'access-denied'],
+  [4, 'privilege-not-held'],
+  [7, 'readback-mismatch'],
+]);
+
 export function buildWindowsAclPowerShell({ directory }) {
   const securityType = directory ? 'DirectorySecurity' : 'FileSecurity';
+  const infoType = directory ? 'System.IO.DirectoryInfo' : 'System.IO.FileInfo';
   const inheritance = directory
     ? '[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit'
     : '[System.Security.AccessControl.InheritanceFlags]::None';
   return [
     '$ErrorActionPreference = "Stop"',
-    '$target = $env:SPOTTER_ACL_PATH',
+    'try { $target = $env:SPOTTER_ACL_PATH',
     '$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User',
-    `$acl = New-Object System.Security.AccessControl.${securityType}`,
-    '$acl.SetOwner($sid)',
-    '$acl.SetAccessRuleProtection($true, $false)',
     `$inheritance = ${inheritance}`,
+    '$check = { param($path) $acl = Get-Acl -LiteralPath $path; $entries = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])); $acl.AreAccessRulesProtected -and $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $entries.Count -eq 1 -and $entries[0].IdentityReference.Value -eq $sid.Value -and $entries[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and -not $entries[0].IsInherited -and (($entries[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl) -and $entries[0].InheritanceFlags -eq $inheritance -and $entries[0].PropagationFlags -eq [System.Security.AccessControl.PropagationFlags]::None }',
+    'if (-not (& $check $target)) { $current = Get-Acl -LiteralPath $target',
+    `$acl = New-Object System.Security.AccessControl.${securityType}`,
+    'if ($current.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { $acl.SetOwner($sid) }',
+    '$acl.SetAccessRuleProtection($true, $false)',
     '$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, "FullControl", $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)',
     '$acl.AddAccessRule($rule)',
-    'Set-Acl -LiteralPath $target -AclObject $acl',
-    '$readback = Get-Acl -LiteralPath $target',
-    '$ownerSid = $readback.GetOwner([System.Security.Principal.SecurityIdentifier]).Value',
-    '$entries = @($readback.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))',
-    '$valid = $entries.Count -eq 1 -and $ownerSid -eq $sid.Value -and $entries[0].IdentityReference.Value -eq $sid.Value -and $entries[0].AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and -not $entries[0].IsInherited -and (($entries[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl)',
-    'if (-not $valid) { exit 7 }',
+    `[System.IO.FileSystemAclExtensions]::SetAccessControl([${infoType}]::new($target), $acl)`,
+    'if (-not (& $check $target)) { exit 7 }',
+    '}',
+    '} catch { $e = $_.Exception',
+    'while ($e.InnerException) { $e = $e.InnerException }',
+    'if ($e -is [System.UnauthorizedAccessException]) { exit 3 }',
+    'if ($e -is [System.Security.AccessControl.PrivilegeNotHeldException]) { exit 4 }',
+    'exit 1',
+    '}',
   ].join('; ');
 }
 
@@ -882,17 +904,27 @@ export async function processStartIdentity(pid, options = {}) {
 function spawnForExit(command, args, { timeoutMs, env = process.env }) {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let timedOut = false;
     const child = spawn(command, args, { stdio: 'ignore', windowsHide: true, env });
-    const finish = (error) => {
+    // The reason is a fixed vocabulary: never the child's output or the exception text.
+    const finish = (reason) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      error ? reject(storeError('private ACL operation failed')) : resolve();
+      reason ? reject(aclFailure(reason)) : resolve();
     };
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
-    child.once('error', finish);
-    child.once('close', (code) => finish(code === 0 ? null : new Error('nonzero')));
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
+    child.once('error', () => finish('spawn-failed'));
+    child.once('close', (code) => {
+      if (timedOut) return finish('timeout');
+      if (code === 0) return finish(null);
+      finish(ACL_EXIT_REASONS.get(code) ?? 'exit-unexpected');
+    });
   });
+}
+
+function aclFailure(reason) {
+  return Object.assign(storeError(`private ACL operation failed: ${reason}`), { aclReason: reason });
 }
 
 function spawnCapture(command, args, { timeoutMs }) {
