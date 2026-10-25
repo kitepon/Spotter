@@ -3,6 +3,20 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.8 — 2026-10-25
+
+- Windowsで、runtime errorの登録が同時の失敗で黙って失われることがあった欠陥を直す。登録はstore lockを持ったまま
+  PowerShellを2回起動していた（lock内でstore fileを検証し、置き換えた直後にも検証）。別processの登録はlockで
+  順番待ちになり、待つ全員が前の起動を払うため、isolated observerの予算（4.25秒）を超えた登録が落ち、
+  痕跡はhookに見えない固定のstderr 1行だけだった。foxの一時storeで、同時に始めた登録のうち届いた数は
+  6件中で1.9.6が3、1.9.7が5、10件中で1.9.6が2、1.9.7が4〜5だった。今回は6件中6、10件中10
+  （空回りのprocessを16重ねても10件中10、最悪3.7秒）。
+- 既存のstore fileを、lockを取る前にdirectoryとlockと同じ1回の起動へ渡し、lock内の読取では起動しない。
+  置き換えたfileはlockを手放した後に検証する。検証の省略やcache、timeoutの延長はしない。既存storeの登録での
+  起動回数は3から2になる。待機側の`SPOTTER.AUDITOR.UNRECOVERED`の登録にも同じ変更を入れる。
+- 孤立して起きた失敗が記録されない理由はこの変更では説明できない。記録済みの件数は、実際の失敗より少ない
+  可能性がある下限として読む。
+
 ## 1.9.7 — 2026-10-25
 
 - Windowsで`taskkill`が0以外で終わった時の判定を、終了コードではなくchild自身の`close`の観測へ変える。tree解体中の
