@@ -134,9 +134,6 @@ export function npmShimEntryPath(source, shimDir) {
   return win32.join(shimDir, ...segments);
 }
 
-// taskkill は root の pid が存在しない時に 128 で終わる。この時 taskkill は何も終了していない。
-const TASKKILL_PROCESS_NOT_FOUND = 128;
-
 // 'close' は process の終了と全 stdio pipe の EOF を意味する。root より長生きした子孫が
 // pipe を持っている間は stream が閉じないので、ここは false になる。
 function childHasClosed(child) {
@@ -162,8 +159,11 @@ function waitForChildClose(child, graceMs) {
 
 // cmd.exe shim のみ kill すると孫の CLI が残り得るため、Windows は process tree を
 // taskkill で終了する。taskkill 自体の起動・終了に失敗した時だけ direct kill へ戻す。
-// taskkill が root を見つけられなかった時は、child 自身の close を確認できた場合だけ終了済みとする。
-// timeout と同時に自分で終わった process を「終了未確認」にしないためで、close が無ければ従来どおり失敗する。
+// taskkill が 0 以外で終わった時は、exit code を判定に使わず、child 自身の close を確認できた場合だけ
+// 終了済みとする。tree が解体している最中は、root が見つからない時(128)も、root か子孫が先に消えた時(255、
+// fox 2026-10-13)も、taskkill は失敗として終わるため、exit code では「終わった」と「終わっていない」を
+// 区別できない。timeout と同時に自分で終わった process を「終了未確認」にしないためで、close が無ければ失敗する。
+// 'close' が確認できるのは root と pipe を持つ子孫だけで、pipe を持たない子孫の生存までは確認できない。
 export function terminateProcessTree(child, {
   platform = process.platform,
   spawnFn = spawn,
@@ -219,10 +219,6 @@ export function terminateProcessTree(child, {
           error.exitCode = code;
           finish(error);
         };
-        if (code !== TASKKILL_PROCESS_NOT_FOUND) {
-          fail();
-          return;
-        }
         waitForChildClose(child, closeGraceMs).then((closed) => {
           if (closed) finish();
           else fail();

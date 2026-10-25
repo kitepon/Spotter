@@ -143,10 +143,12 @@ The read-only Codex auditor uses `--skip-git-repo-check` because an installed Sp
 can be a non-Git directory; Codex's workspace trust gate must not prevent that audit.
 When the limit passes, the Codex CLI auditor ends the child's process tree before it reports the timeout
 (`taskkill /T /F` on Windows). A tree whose end cannot be confirmed is `E_CODEX_CLI_TERMINATION`, not a
-timeout. If taskkill finds no root process (exit 128) and the child itself has reported `close` — it exited
-and every stdio pipe reached EOF, the same evidence as an ordinary exit — the tree counts as ended and the
-audit stays a timeout. Without that `close`, for example while a descendant still holds a pipe, and for any
-other taskkill failure, the result remains `E_CODEX_CLI_TERMINATION`.
+timeout. When taskkill exits non-zero, its exit code is not the evidence: a tree that is coming apart makes taskkill
+fail whether the root was not found (128) or the root or a descendant ended first (255, seen on fox 2026-10-13).
+If the child itself has reported `close` — it exited and every stdio pipe reached EOF, the same evidence as an
+ordinary exit — the tree counts as ended and the audit stays a timeout. Without that `close`, for example while a
+descendant still holds a pipe, the result remains `E_CODEX_CLI_TERMINATION`. `close` does not show that a descendant
+holding no pipe has ended.
 Codex and Grok failure Hook events keep the projected `code` and add `internalCode`, the failing step's own
 code, plus `causeCode` and `causeExitCode` when the failure has them. These are fixed identifiers and an exit
 status; error messages and provider output are not recorded. Hook output and stderr still carry only the
