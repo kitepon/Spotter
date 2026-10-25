@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { writeFileSync } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
@@ -772,14 +773,15 @@ test('createCodexCliAuditorBackend: timeout accepts schema-valid last-message be
       killed = true;
     };
     const lastPath = args[args.indexOf('--output-last-message') + 1];
-    queueMicrotask(async () => {
-      await import('node:fs/promises').then(({ writeFile }) => writeFile(lastPath, JSON.stringify({
-        pass: false,
-        missing_tools: [
-          { name: 'mcp__caveat__caveat_search', reason: 'known caveat should be searched' },
-        ],
-      }), 'utf8'));
-    });
+    // The message must exist before the 10 ms timeout fires. Writing it from a later task made
+    // the test depend on file I/O finishing inside that budget, which a loaded Windows runner
+    // does not always meet.
+    writeFileSync(lastPath, JSON.stringify({
+      pass: false,
+      missing_tools: [
+        { name: 'mcp__caveat__caveat_search', reason: 'known caveat should be searched' },
+      ],
+    }), 'utf8');
     return child;
   };
   const backend = createCodexCliAuditorBackend({

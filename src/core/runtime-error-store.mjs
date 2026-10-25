@@ -252,8 +252,10 @@ export async function observeAuditorAvailability(input, options = {}) {
   const storePath = options.storePath ?? defaultRuntimeErrorStorePath(options);
   const statePath = auditorAvailabilityPath(storePath);
   return enqueue(storePath, async () => {
-    await ensurePrivateStoreArea(storePath, options);
-    return withStoreLock(runtimeErrorLockPath(storePath), options, async () => {
+    // Only a failure can register a record; a success never rewrites the store.
+    await ensurePrivateStoreArea(storePath, options, { includeStoreFile: outcome === 'failure' });
+    let storeRewritten = false;
+    const result = await withStoreLock(runtimeErrorLockPath(storePath), options, async () => {
       const state = await readAvailabilityState(statePath, options);
       const streak = state.streaks[backend];
       if (outcome === 'success') {
@@ -276,11 +278,12 @@ export async function observeAuditorAvailability(input, options = {}) {
         // cannot count the same outage twice.
         const observationId = createHash('sha256')
           .update(`auditor_unrecovered\n${backend}\n${current.first_failed_at}`, 'utf8').digest('hex').slice(0, 32);
-        const store = await readStore(storePath, options, { directoryVerified: true });
+        const store = await readStore(storePath, options, { directoryVerified: true, fileVerified: true });
         applyObservation(store, definition, fingerprint, observationId, { ...options, now: () => timestamp });
         validateStore(store);
         const atomicWriteFn = options.atomicWriteFn ?? atomicWriteStore;
         await atomicWriteFn(storePath, `${JSON.stringify(store)}\n`, options);
+        storeRewritten = true;
         current.registered = true;
         registered = true;
       }
@@ -288,6 +291,8 @@ export async function observeAuditorAvailability(input, options = {}) {
       await writeAvailabilityState(statePath, state);
       return { collected: true, streak: current.registered ? 'registered' : 'open', registered };
     });
+    if (storeRewritten) await settleStoreFileAcl(storePath, options);
+    return result;
   });
 }
 
@@ -675,16 +680,18 @@ export async function readRuntimeErrorStoreStatus(options = {}) {
 
 async function mutateStore(storePath, options, mutate) {
   return enqueue(storePath, async () => {
-    await ensurePrivateStoreArea(storePath, options);
+    await ensurePrivateStoreArea(storePath, options, { includeStoreFile: true });
     const lockPath = runtimeErrorLockPath(storePath);
-    return withStoreLock(lockPath, options, async () => {
-      const store = await readStore(storePath, options, { directoryVerified: true });
+    const result = await withStoreLock(lockPath, options, async () => {
+      const store = await readStore(storePath, options, { directoryVerified: true, fileVerified: true });
       const result = mutate(store);
       validateStore(store);
       const atomicWriteFn = options.atomicWriteFn ?? atomicWriteStore;
       await atomicWriteFn(storePath, `${JSON.stringify(store)}\n`, options);
       return result;
     });
+    await settleStoreFileAcl(storePath, options);
+    return result;
   });
 }
 
@@ -725,16 +732,42 @@ async function createPrivateLockFile(lockPath) {
 // Directory, then lock file. On Windows both are applied by one PowerShell start, so the
 // empty lock file is created before the directory ACL is replaced; it holds no data, and the
 // store file is only created afterwards, inside the private directory.
-async function ensurePrivateStoreArea(storePath, options) {
+//
+// `includeStoreFile` also hands an existing store file to that same start. A caller that is about
+// to rewrite the store then reads it under the lock without a start of its own (`fileVerified`),
+// and the new file is verified once the lock is released (`settleStoreFileAcl`).
+async function ensurePrivateStoreArea(storePath, options, { includeStoreFile = false } = {}) {
   const directory = dirname(storePath);
   const lockPath = runtimeErrorLockPath(storePath);
   const windows = (options.platform ?? process.platform) === 'win32';
   await mkdir(directory, { recursive: true, mode: 0o700 });
   if (!windows) await enforcePrivatePath(directory, options, { directory: true, repair: true });
   await createPrivateLockFile(lockPath);
-  await enforcePrivatePaths(windows
-    ? [{ path: directory, directory: true, repair: true }, { path: lockPath, directory: false, repair: true }]
-    : [{ path: lockPath, directory: false, repair: false }], options);
+  if (!windows) {
+    await enforcePrivatePaths([{ path: lockPath, directory: false, repair: false }], options);
+    return;
+  }
+  const entries = [{ path: directory, directory: true, repair: true }, { path: lockPath, directory: false, repair: true }];
+  if (includeStoreFile && await pathExists(storePath)) entries.push({ path: storePath, directory: false, repair: true });
+  await enforcePrivatePaths(entries, options);
+}
+
+async function pathExists(path) {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+// On Windows the store file is replaced by a rename inside the lock and verified here, after the
+// lock is released, so no waiting writer pays for a PowerShell start. The new file is created in
+// the already-private directory, and every later access verifies it again before reading.
+async function settleStoreFileAcl(storePath, options) {
+  if ((options.platform ?? process.platform) !== 'win32') return;
+  await enforcePrivatePath(storePath, options, { directory: false, repair: true });
 }
 
 async function atomicWriteStore(storePath, bytes, options = {}) {
@@ -747,7 +780,9 @@ async function atomicWriteStore(storePath, bytes, options = {}) {
     await handle.close();
     handle = null;
     await rename(temporary, storePath);
-    await enforcePrivatePath(storePath, options, { directory: false, repair: true });
+    if ((options.platform ?? process.platform) !== 'win32') {
+      await enforcePrivatePath(storePath, options, { directory: false, repair: true });
+    }
   } catch (error) {
     await handle?.close().catch(() => {});
     await rm(temporary, { force: true }).catch(() => {});
@@ -755,10 +790,10 @@ async function atomicWriteStore(storePath, bytes, options = {}) {
   }
 }
 
-async function readStore(storePath, options = {}, { missingOk = true, directoryVerified = false } = {}) {
+async function readStore(storePath, options = {}, { missingOk = true, directoryVerified = false, fileVerified = false } = {}) {
   let raw;
   try {
-    raw = decodeUtf8(await readPrivateFile(storePath, options, { enforceWindowsAcl: true, directoryVerified }));
+    raw = decodeUtf8(await readPrivateFile(storePath, options, { enforceWindowsAcl: true, directoryVerified, fileVerified }));
   } catch (error) {
     if (missingOk && error?.code === 'ENOENT') return emptyStore();
     throw error;
@@ -779,8 +814,10 @@ async function ensurePrivateDirectory(directory, options) {
 }
 
 // `directoryVerified` is set only by a caller that enforced this file's directory earlier in
-// the same operation, before taking the store lock.
-async function readPrivateFile(path, options, { enforceWindowsAcl, directoryVerified = false }) {
+// the same operation, before taking the store lock. `fileVerified` is set only by a caller that
+// handed this file to that same earlier start; the file is still type-checked and re-read
+// through the opened handle.
+async function readPrivateFile(path, options, { enforceWindowsAcl, directoryVerified = false, fileVerified = false }) {
   const platform = options.platform ?? process.platform;
   const directory = dirname(path);
   let info;
@@ -792,13 +829,15 @@ async function readPrivateFile(path, options, { enforceWindowsAcl, directoryVeri
       throw error;
     }
     validatePrivateStat(info, options, { directory: false, platform });
-    // Directory first, then the file, in one PowerShell start.
-    await enforcePrivatePaths([
-      ...(directoryVerified ? [] : [{ path: directory, directory: true, repair: true }]),
-      { path, directory: false, repair: true },
-    ], options);
-    info = await lstat(path);
-    validatePrivateStat(info, options, { directory: false, platform });
+    if (!(directoryVerified && fileVerified)) {
+      // Directory first, then the file, in one PowerShell start.
+      await enforcePrivatePaths([
+        ...(directoryVerified ? [] : [{ path: directory, directory: true, repair: true }]),
+        { path, directory: false, repair: true },
+      ], options);
+      info = await lstat(path);
+      validatePrivateStat(info, options, { directory: false, platform });
+    }
   } else {
     if (enforceWindowsAcl) await enforcePrivatePath(directory, options, { directory: true, repair: false });
     info = await lstat(path);

@@ -400,8 +400,12 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   固定語彙（`script-error`・`access-denied`・`privilege-not-held`・`readback-mismatch`・`timeout`・
   `spawn-failed`・`exit-unexpected`）だけで返し、子processの出力とpathは載せない。
   PowerShellの起動が標準利用者では1回約0.7秒かかり、isolated observerの予算（4.25秒）を占めるため、
-  1つのstore操作が検証する対象は順序を保ったまま1回の起動へまとめる（directoryとlockを1回、
-  既存storeは読取前と書込後の各1回）。同じ操作内で検証済みのdirectoryは読取で再検証しない。
+  1つのstore操作が検証する対象は順序を保ったまま1回の起動へまとめる（directoryとlockと既存storeを
+  lockを取る前に1回、置き換えた後のstoreを1回）。**PowerShellはstore lockを持っている間は起動しない**。
+  別processの登録はlockで順番待ちになるため、lock内の起動は待つ全員が順に払い、同時の失敗が重なると
+  予算を超えた登録が黙って失われる（fox 2026-10-25: 同時6件で1.9.7は1〜3件、1.9.6は3件を失った）。
+  lock内の読取は、同じ操作でlock前に検証したdirectoryとfileを再検証せず、型・所有者と開いたhandleの
+  確認だけを行う。置き換えたfileはlockを手放した後に検証する。
   単独の読取（snapshot・status）は毎回directoryとfileの所有者・ACE・継承を検証し、必要なら修復する。
 - `spotter diagnostics runtime-errors` is the read-only allow-listed snapshot. `diagnostics logs` and
   `diagnostics factory` expose only bounded collection/store status and counts. Cursor acknowledgement
