@@ -390,8 +390,17 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   death. The JSON aggregate itself is written by fsync plus atomic rename. Windows store access replaces
   inherited/ambient ACLs with one FullControl ACE for the current process SID and verifies the readback
   before continuing.
-  WindowsのACL設定とprocess識別にはPowerShell 7を使う。保存先の権限は
-  `Set-Acl`／`Get-Acl`で設定・読戻しし、旧.NET Framework専用APIに依存しない。
+  WindowsのACL設定とprocess識別にはPowerShell 7を使う。保存先の権限は`Get-Acl`で先に読み、
+  所有者・継承遮断・現在SIDだけの`FullControl` 1件がそろっていれば何も書かない。そろっていない時だけ、
+  .NETの`FileSystemAclExtensions.SetAccessControl`でAccessと（所有者が違う時だけ）Ownerを書き、読み戻して
+  確かめる。`Set-Acl`は使わない。非管理者はSeSecurityPrivilegeを持たず、`Set-Acl`は保護済みの対象を
+  2回目に拒否するため、Audit sectionへは触れない。失敗は`private ACL operation failed: <reason>`の
+  固定語彙（`script-error`・`access-denied`・`privilege-not-held`・`readback-mismatch`・`timeout`・
+  `spawn-failed`・`exit-unexpected`）だけで返し、子processの出力とpathは載せない。
+  PowerShellの起動が標準利用者では1回約0.7秒かかり、isolated observerの予算（4.25秒）を占めるため、
+  1つのstore操作が検証する対象は順序を保ったまま1回の起動へまとめる（directoryとlockを1回、
+  既存storeは読取前と書込後の各1回）。同じ操作内で検証済みのdirectoryは読取で再検証しない。
+  単独の読取（snapshot・status）は毎回directoryとfileの所有者・ACE・継承を検証し、必要なら修復する。
 - `spotter diagnostics runtime-errors` is the read-only allow-listed snapshot. `diagnostics logs` and
   `diagnostics factory` expose only bounded collection/store status and counts. Cursor acknowledgement
   is monotonic; resolve/reopen advance sequence; compaction preserves all unacknowledged records.
