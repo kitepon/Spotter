@@ -3,6 +3,22 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.7 — 2026-10-25
+
+- Windowsで`taskkill`が0以外で終わった時の判定を、終了コードではなくchild自身の`close`の観測へ変える。tree解体中の
+  `taskkill`は255など128以外の終了コードで終わることがあり、1.9.4は128だけを終了済みと見なしていたため、
+  Codex CLIの終了が`E_CODEX_CLI_TERMINATION`（`causeCode=E_PROCESS_TREE_TERMINATION`）として失敗に入っていた
+  （foxで2026-10-13に255を記録）。0以外の終了コードでも、猶予内にchildが`close`すれば終了済みとし、`close`が来なければ
+  終了コードを残したまま失敗にする。`close`が示すのはrootとpipeを持つ子孫までで、pipeを持たない子孫の生存は
+  128の既存経路と同じく見えない。
+- 管理者でないWindows利用者でも、runtime error storeの非公開ACLを保護済みの対象へ繰り返し適用できる。`Set-Acl`は
+  Audit節も書くため、SeSecurityPrivilegeを持たない利用者では2回目（すでに保護済み）の適用が失敗し、storeが
+  2回目のアクセスから使えなくなっていた。ACLを先に読み、すでに非公開なら何も書かず、違う時はAccess節（必要ならOwner）
+  だけを書いて読み戻す。
+- 1回のstore操作でPowerShellを起こす回数を減らす（新規store 4→2、既存store 5→3、snapshot・status 2→1）。
+  標準利用者ではPowerShellの1回の起動が約0.7秒かかり、isolated observerの予算（5秒）を偶然に頼って満たしていた。
+  検証を省いたり、timeoutを延ばしたりはしない。
+
 ## 1.9.6 — 2026-10-14
 
 - 固定の道具一覧（baseline）を持つ`claude.ai`のMCPサーバー（Gmail・Google Calendar・Google Drive）へ、refresh時に
