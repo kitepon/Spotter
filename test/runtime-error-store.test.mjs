@@ -8,12 +8,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  AUDITOR_UNRECOVERED_AFTER_MS,
   RUNTIME_ERROR_DEFINITIONS,
   acknowledgeRuntimeErrors,
   buildWindowsAclPowerShell,
   compactRuntimeErrors,
   defaultFactoryReporterConfigPath,
   defaultRuntimeErrorStorePath,
+  observeAuditorAvailability,
   observeRuntimeError,
   observeRuntimeErrorIsolatedSafe,
   observeRuntimeErrorSafe,
@@ -718,13 +720,13 @@ test('Windows store operations hand every ACL target to as few PowerShell starts
     [[box.storePath, false]],
   ]);
 
-  // Existing store: the directory is not verified a second time inside the operation, but the
-  // store file is verified before reading and again after the write.
+  // Existing store: directory, lock and the store file go to one start before the lock is taken,
+  // the read under the lock needs none, and the replaced file is verified after the lock is
+  // released.
   await fake.reset();
   await observeRuntimeError('daemon_transport', opts);
   assert.deepEqual((await fake.calls()).map(shape), [
-    [[directory, true], [lock, false]],
-    [[box.storePath, false]],
+    [[directory, true], [lock, false], [box.storePath, false]],
     [[box.storePath, false]],
   ]);
 
@@ -735,6 +737,49 @@ test('Windows store operations hand every ACL target to as few PowerShell starts
   await fake.reset();
   await readRuntimeErrorStoreStatus(opts);
   assert.deepEqual((await fake.calls()).map(shape), [[[directory, true], [box.storePath, false]]]);
+});
+
+// The isolated observer gives a registration 4.25 s. Registrations from different processes
+// queue on the store lock, so a PowerShell start inside the critical section is paid by every
+// waiter in turn: six simultaneous failures need six times the wait and the last ones are lost.
+// Every start must therefore happen while the lock is free.
+test('Windows store mutations never run a PowerShell start while the store lock is held', {
+  skip: FAKE_POWERSHELL_SKIP,
+}, async (t) => {
+  const box = await sandbox();
+  t.after(() => rm(box.root, { recursive: true, force: true }));
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-lock-pwsh-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const log = join(dir, 'lock.log');
+  const probe = join(dir, 'probe.mjs');
+  await writeFile(probe, [
+    "import { DatabaseSync } from 'node:sqlite';",
+    "import { appendFileSync } from 'node:fs';",
+    'const [lock, log] = process.argv.slice(2);',
+    'const db = new DatabaseSync(lock);',
+    "let state = 'free';",
+    "try { db.exec('PRAGMA busy_timeout=0; BEGIN IMMEDIATE'); db.exec('ROLLBACK'); } catch { state = 'held'; }",
+    'db.close();',
+    "appendFileSync(log, state + '\\n');",
+  ].join('\n'));
+  const path = join(dir, 'pwsh');
+  await writeFile(path, `#!/bin/sh\n'${process.execPath}' '${probe}' '${runtimeErrorLockPath(box.storePath)}' '${log}'\nexit 0\n`);
+  await chmod(path, 0o755);
+  await writeFile(log, '');
+  const opts = options(box, { platform: 'win32', powerShellPath: path });
+  await observeRuntimeError('daemon_transport', opts);
+  await observeRuntimeError('daemon_transport', opts);
+  // The outage lane rewrites the store too, when a streak outlives the recovery window.
+  const began = Date.parse('2026-10-25T00:00:00Z');
+  await observeAuditorAvailability({ outcome: 'failure', backend: 'codex-cli' }, { ...opts, now: () => began });
+  const registered = await observeAuditorAvailability(
+    { outcome: 'failure', backend: 'codex-cli' },
+    { ...opts, now: () => began + AUDITOR_UNRECOVERED_AFTER_MS },
+  );
+  assert.equal(registered.registered, true);
+  const states = (await readFile(log, 'utf8')).split('\n').filter(Boolean);
+  assert.ok(states.length >= 6, `expected the fake PowerShell to be started, saw ${states.length}`);
+  assert.deepEqual([...new Set(states)], ['free']);
 });
 
 test('Windows read of an absent store still repairs the directory once', {
