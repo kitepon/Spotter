@@ -364,6 +364,10 @@ existing Claude-facing `{pass, missing_tools, reason?}` shape.
   `SPOTTER.AUDITOR.UNAVAILABLE` on each occurrence. The lane decides only when to register. Neither
   record says whether the product or the environment is at fault, and both stay open until an
   operator resolves them.
+- A Codex hook failure event for an immediate-lane failure carries `runtimeErrorRegistration`:
+  `collected`, or the observer's fixed reason such as `store_unavailable`. A dropped registration
+  therefore leaves a trace in `hook-events.jsonl`; the daemon logs the same value. The field is
+  absent in the unrecovered lane, where the registration happens later.
 - Severity follows what stops, what is lost and whether it comes back, not the error value. No
   kind loses the user's input, conversation or results, and none runs anything twice, so none is
   `fatal`. `high` means audits are stopped across a whole session or backend and no recovery is

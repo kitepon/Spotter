@@ -191,7 +191,8 @@ export async function startDaemon({
     try {
       judgment = await auditorBackend.judge(input);
     } catch (error) {
-      await reportAuditorFailure(error, auditorOutcomeObservers);
+      const reported = await reportAuditorFailure(error, auditorOutcomeObservers);
+      if (reported.runtimeErrorRegistration !== null) logFn(`runtime error registration: ${reported.runtimeErrorRegistration}`);
       throw error;
     }
     await reportAuditorSuccess(judgment, auditorOutcomeObservers);

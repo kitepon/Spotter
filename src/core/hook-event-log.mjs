@@ -27,7 +27,8 @@
 //     toolName?: string | null,
 //     internalCode?: string | null,   // failing step's own code; `code` is the projected one
 //     causeCode?: string,
-//     causeExitCode?: number
+//     causeExitCode?: number,
+//     runtimeErrorRegistration?: "collected" | <fixed reason such as "store_unavailable">
 //   }
 
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
@@ -52,6 +53,17 @@ export function failureEventFields(error) {
   if (causeCode !== null) fields.causeCode = causeCode;
   if (Number.isInteger(error?.cause?.exitCode)) fields.causeExitCode = error.cause.exitCode;
   return fields;
+}
+
+// Whether the immediate-lane runtime error registration reached the store. Without it a dropped
+// registration leaves no trace in this log. Only a fixed snake_case reason is taken.
+const REGISTRATION_OUTCOME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+
+export function registrationEventFields(reported) {
+  const outcome = reported?.runtimeErrorRegistration;
+  return typeof outcome === 'string' && REGISTRATION_OUTCOME_PATTERN.test(outcome)
+    ? { runtimeErrorRegistration: outcome }
+    : {};
 }
 
 export function hookEventsPath(projectRoot) {
