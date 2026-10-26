@@ -3,6 +3,14 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.9 — 2026-10-26
+
+- runtime errorの即時登録が届いたかどうかを、Codex hookの失敗eventの`runtimeErrorRegistration`に残す。値は`collected`、
+  または`collection_disabled`・`store_unavailable`などの固定理由だけで、登録が落ちても痕跡がhook-eventsに残る。
+  daemonは同じ値をdaemon logに1行出す。`on_unrecovered`のlaneは後で登録するため付けない。
+- 登録の動作・予算・lane・hookの出力と終了コードは変えない。fox（1.9.6）で孤立して起きた2件のEXITが記録されなかった
+  理由は、この変更でも説明しない。次の失敗から、記録の有無と理由を読めるようにするだけである。
+
 ## 1.9.8 — 2026-10-25
 
 - Windowsで、runtime errorの登録が同時の失敗で黙って失われることがあった欠陥を直す。登録はstore lockを持ったまま
