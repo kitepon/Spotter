@@ -1247,6 +1247,39 @@ test('Codex hooks: a failure outside backend access is still registered at once'
   }
 });
 
+test('Codex hooks: the failure event records whether the registration reached the store', async () => {
+  const project = await makeProject();
+  try {
+    const run = async (observer, error) => {
+      const events = [];
+      await runCodexUserPromptSubmitHook({
+        readInput: async () => ({
+          cwd: project, session_id: 'codex-registration-trace', transcript_path: '/tmp/codex-registration-trace.jsonl',
+          prompt: 'GeForce 5000 番台について既知の罠を調べて',
+        }),
+        readLocalFn: async () => [{ name: 'mcp__caveat__caveat_search', description: 'Search known traps.' }],
+        createAuditorBackendFn: () => ({
+          name: 'codex-cli',
+          judge: async () => { throw new AuditorBackendError(error, 'codex-cli failed', { backend: 'codex-cli' }); },
+        }),
+        recordHookEventFn: async ({ event }) => { events.push(event); },
+        writeOutput: () => {},
+        writeError: () => {},
+        runtimeErrorObserver: observer,
+        auditorAvailabilityObserver: async () => {},
+      });
+      return events[0];
+    };
+    assert.equal((await run(async () => ({ collected: true }), 'E_CODEX_CLI_EXIT')).runtimeErrorRegistration, 'collected');
+    assert.equal((await run(async () => ({ collected: false, reason: 'store_unavailable' }), 'E_CODEX_CLI_EXIT')).runtimeErrorRegistration, 'store_unavailable');
+    // An observer that throws or gives no verdict, and the on_unrecovered lane, leave the field out.
+    assert.equal(Object.hasOwn(await run(async () => { throw new Error('boom'); }, 'E_CODEX_CLI_EXIT'), 'runtimeErrorRegistration'), false);
+    assert.equal(Object.hasOwn(await run(async () => ({ collected: true }), 'E_CODEX_CLI_TIMEOUT'), 'runtimeErrorRegistration'), false);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test('Codex hooks: a completed audit reports the recovery from both hooks', async () => {
   const project = await makeProject();
   const observations = [];

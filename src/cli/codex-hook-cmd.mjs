@@ -29,6 +29,7 @@ import {
   appendHookEvent,
   failureEventFields,
   hookEventsPath,
+  registrationEventFields,
   summarizeHookEvents,
 } from '../core/hook-event-log.mjs';
 import {
@@ -216,9 +217,9 @@ export async function runCodexUserPromptSubmitHook({
     });
   } catch (err) {
     await recordEvaluation({ auditStatus: 'error', backend: err?.backend ?? null, model: err?.diagnostics?.modelSelection?.effectiveModel ?? null });
-    if (enteredAuditorBoundary) {
-      await reportAuditorFailure(err, { runtimeErrorObserver, auditorAvailabilityObserver, backend: backend?.name });
-    }
+    const reported = enteredAuditorBoundary
+      ? await reportAuditorFailure(err, { runtimeErrorObserver, auditorAvailabilityObserver, backend: backend?.name })
+      : null;
     const failure = projectBackendFailure(err?.code);
     safeWriteError(writeError, failure.stderr);
     await recordCodexHookEventSafe(recordHookEventFn, {
@@ -229,6 +230,7 @@ export async function runCodexUserPromptSubmitHook({
         backend: err?.backend ?? null,
         code: failure.code,
         ...failureEventFields(err),
+        ...registrationEventFields(reported),
         ...compactCodexModelSelectionForEvent(err?.diagnostics?.modelSelection),
         legacyPendingDiagnostic: legacyPending.diagnostic,
         durationMs: Date.now() - startedAt,
@@ -384,9 +386,9 @@ export async function runCodexStopHook({
     backend = createCodexHookAuditorBackend({ catalog, projectRoot, createAuditorBackendFn });
     judgment = await backend.judge({ stage: 'turn_end', finalResponse, usedTools });
   } catch (err) {
-    if (enteredAuditorBoundary) {
-      await reportAuditorFailure(err, { runtimeErrorObserver, auditorAvailabilityObserver, backend: backend?.name });
-    }
+    const reported = enteredAuditorBoundary
+      ? await reportAuditorFailure(err, { runtimeErrorObserver, auditorAvailabilityObserver, backend: backend?.name })
+      : null;
     const failure = projectBackendFailure(err?.code);
     reportError(failure.stderr);
     writeCodexSystemMessage({ systemMessage: failure.systemMessage, writeOutput });
@@ -398,6 +400,7 @@ export async function runCodexStopHook({
         backend: err?.backend ?? null,
         code: failure.code,
         ...failureEventFields(err),
+        ...registrationEventFields(reported),
         ...compactCodexModelSelectionForEvent(err?.diagnostics?.modelSelection),
         usedToolCount: usedTools.length,
         ...toolUsageEvent,

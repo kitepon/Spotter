@@ -27,13 +27,20 @@ export function auditorAvailabilityBackend(value) {
   return AUDITOR_AVAILABILITY_BACKENDS.has(value) ? value : 'unknown';
 }
 
+// What the registration did, for the hook-event and daemon logs: 'collected', or the observer's
+// fixed reason such as 'store_unavailable'. null when nothing was registered at this call (the
+// on_unrecovered lane registers later) or the observer gave no verdict.
+export function runtimeErrorRegistrationOutcome(result) {
+  if (typeof result?.collected !== 'boolean') return null;
+  return result.collected ? 'collected' : (typeof result.reason === 'string' ? result.reason : 'not_collected');
+}
+
 export async function reportAuditorFailure(error, {
   runtimeErrorObserver, auditorAvailabilityObserver, backend,
 }) {
   try {
     if (auditorFailureLane(error) === 'immediate') {
-      await runtimeErrorObserver('auditor_unavailable');
-      return;
+      return { runtimeErrorRegistration: runtimeErrorRegistrationOutcome(await runtimeErrorObserver('auditor_unavailable')) };
     }
     await auditorAvailabilityObserver({
       outcome: 'failure', backend: auditorAvailabilityBackend(error?.backend ?? backend),
@@ -41,6 +48,7 @@ export async function reportAuditorFailure(error, {
   } catch {
     // Runtime error telemetry must not alter hook output, exit behavior or daemon state.
   }
+  return { runtimeErrorRegistration: null };
 }
 
 // A judgment produced without contacting the backend proves nothing about its availability.
