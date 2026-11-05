@@ -32,7 +32,7 @@
 //     runtimeErrorRegistration?: "collected" | <fixed reason such as "store_unavailable">
 //   }
 
-import { appendFile, mkdir, readFile, rename, stat } from 'node:fs/promises';
+import { appendFile, mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 const HOOK_EVENTS_FILE = 'hook-events.jsonl';
@@ -97,20 +97,39 @@ export async function appendHookEvent({ projectRoot, host, event, maxBytes } = {
   await appendFile(path, JSON.stringify(value) + '\n', 'utf8');
 }
 
-// Rotation must never stop the append: a lost race (ENOENT) or a Windows sharing violation just
-// leaves the file to grow until the next event retries. shortcut: summaries read only the current
-// file, so counts restart after a rotation; add a combined read if cross-generation totals are needed.
+// Rotation is best effort and never stops the append. Every hook process runs stat -> rename ->
+// append, so a short-lived lock file lets one process rotate while the others skip; the winner
+// checks the size again under the lock, so a rotation that just happened is not repeated and the
+// fresh file is not moved over the generation. A lost race, a held or unremovable lock, or a Windows
+// sharing violation leaves the file over the cap until a later event. A line is appended whole, so a
+// single event larger than the cap, or writers racing past the check, can exceed it.
+// Hook events are diagnostics, not records to keep: do not rely on the two generations as an archive.
+const ROTATE_LOCK_STALE_MS = 10_000;
+
 async function rotateHookEvents(path, maxBytes = HOOK_EVENTS_MAX_BYTES) {
+  const lockPath = `${path}.lock`;
   try {
-    if ((await stat(path)).size > maxBytes) await rename(path, `${path}.1`);
+    if ((await stat(path)).size <= maxBytes) return;
+    let lock;
+    try {
+      lock = await open(lockPath, 'wx');
+    } catch {
+      // A lock left by a crashed process would block rotation forever; drop it once it is old.
+      const held = await stat(lockPath).catch(() => null);
+      if (held && Date.now() - held.mtimeMs > ROTATE_LOCK_STALE_MS) await unlink(lockPath).catch(() => {});
+      return;
+    }
+    try {
+      if ((await stat(path)).size > maxBytes) await rename(path, `${path}.1`);
+    } finally {
+      await lock.close().catch(() => {});
+      await unlink(lockPath).catch(() => {});
+    }
   } catch {
     // best effort
   }
 }
 
-// Best-effort wrapper used by hook handlers — hook event log failures should never
-// fail the hook itself (the auditor judgment + pending queue are the user-facing
-// surfaces; missing diagnostics is acceptable degradation).
 export async function appendHookEventSafe({ projectRoot, host, event, writeError } = {}) {
   try {
     await appendHookEvent({ projectRoot, host, event });
@@ -130,6 +149,9 @@ export async function summarizeHookEvents({ projectRoot, readFileFn = readFile }
     projectRoot,
     logPath: hookEventsPath(projectRoot),
     exists: false,
+    // Counts cover the current file only; these keep a rotated file from being read as the whole history.
+    firstTimestamp: null,
+    previousGeneration: false,
     events: 0,
     parseErrors: 0,
     byHost: {},
@@ -154,6 +176,7 @@ export async function summarizeHookEvents({ projectRoot, readFileFn = readFile }
         continue;
       }
       summary.events += 1;
+      summary.firstTimestamp ??= typeof event.timestamp === 'string' ? event.timestamp : null;
       bump(summary.byHost, event.host ?? 'unknown');
       bump(summary.byHook, event.hook ?? 'unknown');
       bump(summary.byStatus, event.status ?? 'unknown');
@@ -168,6 +191,7 @@ export async function summarizeHookEvents({ projectRoot, readFileFn = readFile }
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
+  summary.previousGeneration = await stat(`${summary.logPath}.1`).then(() => true, () => false);
   summary.averageDurationMs = summary.events > 0 ? Math.round(totalDurationMs / summary.events) : 0;
   return summary;
 }

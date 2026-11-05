@@ -78,13 +78,14 @@ export async function runDaemonStart({ argv }) {
   });
 
   const logFile = await open(logFilePath, 'a');
-  await pruneDaemonLogs({ keepPath: logFilePath });
   const log = (msg) => {
     const line = `[${new Date().toISOString()}] ${msg}\n`;
     logFile.write(line).catch(() => {});
   };
 
   leaveSessionCwd({ target: join(homedir(), '.spotter'), log });
+  const pruned = await pruneDaemonLogs({ keepPath: logFilePath });
+  if (pruned.failed > 0) log(`daemon log prune: ${pruned.failed} old log(s) could not be removed`);
 
   let running;
   try {

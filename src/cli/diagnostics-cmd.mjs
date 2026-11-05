@@ -123,6 +123,9 @@ export function formatDaemonLogSummary(summary) {
       lines.push(
         `  hook-events.jsonl: events=${hookEvents.events}, parse_errors=${hookEvents.parseErrors}, avg=${hookEvents.averageDurationMs}ms, max=${hookEvents.maxDurationMs}ms`
       );
+      if (hookEvents.previousGeneration) {
+        lines.push(`    note: current file only (first event ${hookEvents.firstTimestamp ?? 'unknown'}); older events are in hook-events.jsonl.1`);
+      }
       const byHost = formatCounter(hookEvents.byHost);
       if (byHost) lines.push(`    by host: ${byHost}`);
       const byHook = formatCounter(hookEvents.byHook);

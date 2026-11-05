@@ -200,3 +200,79 @@ test('appendHookEvent: replaces the file into .1 once it passes maxBytes, keepin
     await rm(project, { recursive: true, force: true });
   }
 });
+
+test('appendHookEvent: concurrent writers over the cap rotate once and keep every event', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-hookevt-race-'));
+  try {
+    const event = { hook: 'Stop', status: 'success' };
+    const path = hookEventsPath(project);
+    await appendHookEvent({ projectRoot: project, host: 'codex', event });
+    const line = await readFile(path, 'utf8');
+    const prefill = Math.ceil(4100 / line.length);
+    await appendFile(path, line.repeat(prefill - 1), 'utf8');
+    await Promise.all(Array.from({ length: 20 }, () => appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 4000 })));
+    const count = async (file) => (await readFile(file, 'utf8')).split('\n').filter(Boolean).length;
+    assert.equal(await count(path), 20, 'every concurrent event landed in the fresh file');
+    assert.equal(await count(`${path}.1`), prefill, 'one rotation moved the old events, none replaced');
+    await assert.rejects(stat(`${path}.lock`), { code: 'ENOENT' });
+    assert.equal((await summarizeHookEvents({ projectRoot: project })).parseErrors, 0);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('appendHookEvent: one event larger than the cap is still written whole, then rotated by the next', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-hookevt-big-'));
+  try {
+    const big = { hook: 'Stop', status: 'x'.repeat(2000) };
+    await appendHookEvent({ projectRoot: project, host: 'codex', event: big, maxBytes: 300 });
+    const path = hookEventsPath(project);
+    assert.ok((await stat(path)).size > 300, 'the cap is not a hard limit');
+    await appendHookEvent({ projectRoot: project, host: 'codex', event: { hook: 'Stop', status: 'ok' }, maxBytes: 300 });
+    assert.ok((await stat(`${path}.1`)).size > 2000);
+    assert.equal((await summarizeHookEvents({ projectRoot: project })).events, 1);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('appendHookEvent: a failed rotation (rename target is a directory) still appends; a stale lock is cleared', async () => {
+  const { mkdir, utimes, writeFile: write } = await import('node:fs/promises');
+  const project = await mkdtemp(join(tmpdir(), 'spotter-hookevt-fail-'));
+  try {
+    const event = { hook: 'Stop', status: 'success' };
+    await appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 100 });
+    const path = hookEventsPath(project);
+    await mkdir(`${path}.1`);
+    await write(join(`${path}.1`, 'keep'), 'x');
+    await appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 100 });
+    await appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 100 });
+    assert.ok((await stat(path)).size > 100, 'over the cap when rename fails');
+    assert.equal((await summarizeHookEvents({ projectRoot: project })).events, 3);
+    // A crashed rotator's lock only delays rotation until it is old.
+    await write(`${path}.lock`, '');
+    const old = new Date(Date.now() - 60000);
+    await utimes(`${path}.lock`, old, old);
+    await appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 100 });
+    await assert.rejects(stat(`${path}.lock`), { code: 'ENOENT' });
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test('summarizeHookEvents: reports the first event time and whether a previous generation exists', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-hookevt-gen-'));
+  try {
+    const event = { hook: 'Stop', status: 'success' };
+    await appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 100 });
+    let summary = await summarizeHookEvents({ projectRoot: project });
+    assert.equal(summary.previousGeneration, false);
+    assert.match(summary.firstTimestamp, /^\d{4}-\d\d-\d\dT/);
+    await appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 100 });
+    summary = await summarizeHookEvents({ projectRoot: project });
+    assert.equal(summary.previousGeneration, true);
+    assert.equal(summary.events, 1);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});

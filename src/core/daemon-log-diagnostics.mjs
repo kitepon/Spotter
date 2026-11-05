@@ -1,6 +1,6 @@
-import { readdir, readFile, stat, unlink } from 'node:fs/promises';
+import { lstat, readdir, readFile, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 const LOG_SCHEMA = 'spotter.daemon_log_summary.v1';
 const STAGES = ['user_input', 'turn_end'];
@@ -11,32 +11,43 @@ export function defaultDaemonLogDir() {
 
 export const DAEMON_LOG_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
-// Called when a daemon starts: one log per session otherwise accumulates forever and the
-// diagnostics read all of them. Failures are ignored; the next daemon start retries.
+// Called when a daemon starts, so a session log does not outlive its use forever. A log is removed
+// only when it is a regular file of this user inside logDir, is older than the limit, and its session
+// has no pid file. A pid file means the daemon may be alive or died uncleanly, which this cannot tell
+// apart, so that log is kept (shortcut: a stale pid file keeps its log until the next daemon start
+// removes the pid file). Never throws; `failed` counts logs that should have been removed and were not,
+// so the caller can record it. A start with no later start leaves old logs in place.
 export async function pruneDaemonLogs({
   logDir = defaultDaemonLogDir(),
+  runtimeDir = join(dirname(logDir), 'runtime'),
   keepPath = null,
   maxAgeMs = DAEMON_LOG_MAX_AGE_MS,
   now = Date.now(),
+  uid = process.getuid?.() ?? null,
 } = {}) {
-  let removed = 0;
+  const result = { removed: 0, kept: 0, failed: 0 };
   try {
     for (const entry of await readdir(logDir, { withFileTypes: true })) {
+      const match = /^daemon-(.+)\.log$/.exec(entry.name);
       const path = join(logDir, entry.name);
-      if (!entry.isFile() || !/^daemon-.+\.log$/.test(entry.name) || path === keepPath) continue;
+      if (!entry.isFile() || !match || path === keepPath) continue;
       try {
-        if (now - (await stat(path)).mtimeMs > maxAgeMs) {
-          await unlink(path);
-          removed += 1;
+        const info = await lstat(path);
+        if (now - info.mtimeMs <= maxAgeMs || (uid !== null && info.uid !== uid)) continue;
+        if (await lstat(join(runtimeDir, `session-${match[1]}.pid`)).then(() => true, () => false)) {
+          result.kept += 1;
+          continue;
         }
+        await unlink(path);
+        result.removed += 1;
       } catch {
-        // best effort
+        result.failed += 1;
       }
     }
   } catch {
-    // log dir missing or unreadable
+    result.failed += 1;
   }
-  return removed;
+  return result;
 }
 
 export async function summarizeDaemonLogs({

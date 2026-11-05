@@ -134,24 +134,36 @@ test('runDiagnosticsLogsCommand: emits ASCII-safe JSON for Windows PowerShell 5.
   );
 });
 
-test('pruneDaemonLogs: removes only daemon logs older than the age limit, never the kept one', async () => {
-  const { mkdtemp, writeFile, utimes, readdir, rm } = await import('node:fs/promises');
+test('pruneDaemonLogs: removes only old logs of sessions without a pid file; keeps live, unknown, linked and own-session logs', async () => {
+  const { mkdtemp, mkdir, writeFile, utimes, readdir, rm, symlink } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const { pruneDaemonLogs } = await import('../src/core/daemon-log-diagnostics.mjs');
-  const dir = await mkdtemp(join(tmpdir(), 'spotter-logprune-'));
+  const root = await mkdtemp(join(tmpdir(), 'spotter-logprune-'));
+  const logDir = join(root, 'logs');
+  const runtimeDir = join(root, 'runtime');
   try {
+    await mkdir(logDir);
+    await mkdir(runtimeDir);
     const old = new Date(Date.now() - 40 * 86400000);
-    for (const name of ['daemon-old.log', 'daemon-kept.log', 'daemon-new.log', 'other.txt']) {
-      await writeFile(join(dir, name), 'x');
+    for (const name of ['daemon-old.log', 'daemon-live.log', 'daemon-self.log', 'daemon-new.log', 'other.txt']) {
+      await writeFile(join(logDir, name), 'x');
     }
-    await utimes(join(dir, 'daemon-old.log'), old, old);
-    await utimes(join(dir, 'daemon-kept.log'), old, old);
-    await utimes(join(dir, 'other.txt'), old, old);
-    assert.equal(await pruneDaemonLogs({ logDir: dir, keepPath: join(dir, 'daemon-kept.log') }), 1);
-    assert.deepEqual((await readdir(dir)).sort(), ['daemon-kept.log', 'daemon-new.log', 'other.txt']);
-    assert.equal(await pruneDaemonLogs({ logDir: join(dir, 'missing') }), 0);
+    await writeFile(join(root, 'outside.log'), 'x');
+    await symlink(join(root, 'outside.log'), join(logDir, 'daemon-link.log'));
+    for (const name of ['daemon-old.log', 'daemon-live.log', 'daemon-self.log', 'other.txt']) {
+      await utimes(join(logDir, name), old, old);
+    }
+    await writeFile(join(runtimeDir, 'session-live.pid'), '1');
+    const result = await pruneDaemonLogs({ logDir, runtimeDir, keepPath: join(logDir, 'daemon-self.log') });
+    assert.deepEqual(result, { removed: 1, kept: 1, failed: 0 });
+    assert.deepEqual((await readdir(logDir)).sort(),
+      ['daemon-link.log', 'daemon-live.log', 'daemon-new.log', 'daemon-self.log', 'other.txt']);
+    assert.equal((await readdir(root)).includes('outside.log'), true);
+    assert.deepEqual(await pruneDaemonLogs({ logDir: join(root, 'missing') }), { removed: 0, kept: 0, failed: 1 });
+    // A log owned by someone else is never touched.
+    assert.equal((await pruneDaemonLogs({ logDir, runtimeDir, uid: -1 })).removed, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   }
 });
