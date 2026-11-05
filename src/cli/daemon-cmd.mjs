@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { open } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
+import { pruneDaemonLogs } from '../core/daemon-log-diagnostics.mjs';
 import {
   observeAuditorAvailabilityIsolatedSafe, observeRuntimeErrorIsolatedSafe,
 } from '../core/runtime-error-store.mjs';
@@ -83,6 +84,8 @@ export async function runDaemonStart({ argv }) {
   };
 
   leaveSessionCwd({ target: join(homedir(), '.spotter'), log });
+  const pruned = await pruneDaemonLogs({ keepPath: logFilePath });
+  if (pruned.failed > 0) log(`daemon log prune: ${pruned.failed} old log(s) could not be removed`);
 
   let running;
   try {
