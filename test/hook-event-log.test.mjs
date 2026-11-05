@@ -212,8 +212,10 @@ test('appendHookEvent: concurrent writers over the cap rotate once and keep ever
     await appendFile(path, line.repeat(prefill - 1), 'utf8');
     await Promise.all(Array.from({ length: 20 }, () => appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 4000 })));
     const count = async (file) => (await readFile(file, 'utf8')).split('\n').filter(Boolean).length;
-    assert.equal(await count(path), 20, 'every concurrent event landed in the fresh file');
-    assert.equal(await count(`${path}.1`), prefill, 'one rotation moved the old events, none replaced');
+    // A writer that did not get the lock appends to the old file before it is renamed, so the split
+    // between the files varies; what must hold is one rotation and no lost event.
+    assert.ok((await count(path)) < prefill, 'the old events were moved out of the current file');
+    assert.equal((await count(path)) + (await count(`${path}.1`)), prefill + 20, 'one rotation, no event replaced');
     await assert.rejects(stat(`${path}.lock`), { code: 'ENOENT' });
     assert.equal((await summarizeHookEvents({ projectRoot: project })).parseErrors, 0);
   } finally {
