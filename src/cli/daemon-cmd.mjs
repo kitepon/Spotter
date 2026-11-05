@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { open } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
+import { pruneDaemonLogs } from '../core/daemon-log-diagnostics.mjs';
 import {
   observeAuditorAvailabilityIsolatedSafe, observeRuntimeErrorIsolatedSafe,
 } from '../core/runtime-error-store.mjs';
@@ -77,6 +78,7 @@ export async function runDaemonStart({ argv }) {
   });
 
   const logFile = await open(logFilePath, 'a');
+  await pruneDaemonLogs({ keepPath: logFilePath });
   const log = (msg) => {
     const line = `[${new Date().toISOString()}] ${msg}\n`;
     logFile.write(line).catch(() => {});

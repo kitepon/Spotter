@@ -184,3 +184,19 @@ test('failureEventFields: takes fixed identifiers only, never free text', () => 
   assert.deepEqual(failureEventFields(error), { internalCode: null });
   assert.deepEqual(failureEventFields({ code: `E_${'A'.repeat(80)}` }), { internalCode: null });
 });
+
+test('appendHookEvent: replaces the file into .1 once it passes maxBytes, keeping one generation', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'spotter-hookevt-rotate-'));
+  try {
+    const event = { hook: 'Stop', status: 'success' };
+    await appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 300 });
+    for (let i = 0; i < 6; i += 1) await appendHookEvent({ projectRoot: project, host: 'codex', event, maxBytes: 300 });
+    const path = hookEventsPath(project);
+    assert.ok((await stat(path)).size <= 300 + 200, 'current file stays near the cap');
+    assert.ok((await stat(`${path}.1`)).size > 0, 'previous generation kept');
+    await assert.rejects(stat(`${path}.2`), { code: 'ENOENT' });
+    assert.equal((await summarizeHookEvents({ projectRoot: project })).parseErrors, 0);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});

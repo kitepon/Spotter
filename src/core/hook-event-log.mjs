@@ -7,7 +7,8 @@
 // so `spotter diagnostics logs` can surface hook-side observations the daemon log alone
 // never sees (short-prompt skip, legacy pending discard diagnostics, hook-level transport errors).
 //
-// File path: `<projectRoot>/.spotter/hook-events.jsonl` (append-only, no rotation yet).
+// File path: `<projectRoot>/.spotter/hook-events.jsonl` (append-only; replaced into `.1` once it passes
+// HOOK_EVENTS_MAX_BYTES, so a project keeps at most the current file plus one generation).
 // Record schema (v1):
 //   {
 //     schema: "spotter.hook_event.v1",
@@ -31,10 +32,11 @@
 //     runtimeErrorRegistration?: "collected" | <fixed reason such as "store_unavailable">
 //   }
 
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rename, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 const HOOK_EVENTS_FILE = 'hook-events.jsonl';
+export const HOOK_EVENTS_MAX_BYTES = 2 * 1024 * 1024;
 export const HOOK_EVENT_SCHEMA = 'spotter.hook_event.v1';
 export const HOOK_EVENTS_SUMMARY_SCHEMA = 'spotter.hook_events_summary.v1';
 
@@ -73,7 +75,7 @@ export function hookEventsPath(projectRoot) {
   return join(projectRoot, '.spotter', HOOK_EVENTS_FILE);
 }
 
-export async function appendHookEvent({ projectRoot, host, event } = {}) {
+export async function appendHookEvent({ projectRoot, host, event, maxBytes } = {}) {
   if (typeof projectRoot !== 'string' || projectRoot.length === 0) {
     throw new TypeError('appendHookEvent: projectRoot must be a non-empty string');
   }
@@ -91,7 +93,19 @@ export async function appendHookEvent({ projectRoot, host, event } = {}) {
   };
   const path = hookEventsPath(projectRoot);
   await mkdir(dirname(path), { recursive: true });
+  await rotateHookEvents(path, maxBytes);
   await appendFile(path, JSON.stringify(value) + '\n', 'utf8');
+}
+
+// Rotation must never stop the append: a lost race (ENOENT) or a Windows sharing violation just
+// leaves the file to grow until the next event retries. shortcut: summaries read only the current
+// file, so counts restart after a rotation; add a combined read if cross-generation totals are needed.
+async function rotateHookEvents(path, maxBytes = HOOK_EVENTS_MAX_BYTES) {
+  try {
+    if ((await stat(path)).size > maxBytes) await rename(path, `${path}.1`);
+  } catch {
+    // best effort
+  }
 }
 
 // Best-effort wrapper used by hook handlers — hook event log failures should never

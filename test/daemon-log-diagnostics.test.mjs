@@ -133,3 +133,25 @@ test('runDiagnosticsLogsCommand: emits ASCII-safe JSON for Windows PowerShell 5.
     3
   );
 });
+
+test('pruneDaemonLogs: removes only daemon logs older than the age limit, never the kept one', async () => {
+  const { mkdtemp, writeFile, utimes, readdir, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { pruneDaemonLogs } = await import('../src/core/daemon-log-diagnostics.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-logprune-'));
+  try {
+    const old = new Date(Date.now() - 40 * 86400000);
+    for (const name of ['daemon-old.log', 'daemon-kept.log', 'daemon-new.log', 'other.txt']) {
+      await writeFile(join(dir, name), 'x');
+    }
+    await utimes(join(dir, 'daemon-old.log'), old, old);
+    await utimes(join(dir, 'daemon-kept.log'), old, old);
+    await utimes(join(dir, 'other.txt'), old, old);
+    assert.equal(await pruneDaemonLogs({ logDir: dir, keepPath: join(dir, 'daemon-kept.log') }), 1);
+    assert.deepEqual((await readdir(dir)).sort(), ['daemon-kept.log', 'daemon-new.log', 'other.txt']);
+    assert.equal(await pruneDaemonLogs({ logDir: join(dir, 'missing') }), 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

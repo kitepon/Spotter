@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
@@ -7,6 +7,36 @@ const STAGES = ['user_input', 'turn_end'];
 
 export function defaultDaemonLogDir() {
   return join(homedir(), '.spotter', 'logs');
+}
+
+export const DAEMON_LOG_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Called when a daemon starts: one log per session otherwise accumulates forever and the
+// diagnostics read all of them. Failures are ignored; the next daemon start retries.
+export async function pruneDaemonLogs({
+  logDir = defaultDaemonLogDir(),
+  keepPath = null,
+  maxAgeMs = DAEMON_LOG_MAX_AGE_MS,
+  now = Date.now(),
+} = {}) {
+  let removed = 0;
+  try {
+    for (const entry of await readdir(logDir, { withFileTypes: true })) {
+      const path = join(logDir, entry.name);
+      if (!entry.isFile() || !/^daemon-.+\.log$/.test(entry.name) || path === keepPath) continue;
+      try {
+        if (now - (await stat(path)).mtimeMs > maxAgeMs) {
+          await unlink(path);
+          removed += 1;
+        }
+      } catch {
+        // best effort
+      }
+    }
+  } catch {
+    // log dir missing or unreadable
+  }
+  return removed;
 }
 
 export async function summarizeDaemonLogs({

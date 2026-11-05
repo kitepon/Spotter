@@ -11,6 +11,7 @@ Spotterの文書は、現行契約、進行中の仕事、履歴、証拠を分�
 - [`01_catalog-design.md`](01_catalog-design.md): tool-dbとcatalog discovery
 - [`02_spotter-claude-contract.md`](02_spotter-claude-contract.md): CLI、hook、daemon、auditor、
   runtime error store、evaluationの実装契約
+- [`architecture-map.md`](architecture-map.md): 機能図とデータフロー図（単位、状態の持ち主、保存物の保持）。コード変更の前に更新する
 - [`04_operational-slo.md`](04_operational-slo.md): latency、失敗率、品質、提案観測の運用基準
 - [`11_dashboard-operations.md`](11_dashboard-operations.md): dashboardのservice、routing、公開運用
 - [`adr/`](adr/): 置換されていない不変Decision
