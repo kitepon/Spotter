@@ -27,7 +27,7 @@
 | daemon ログ | daemon（`daemon-cmd.mjs` の `log`、致命時は同期 append） | `~/.spotter/logs/daemon-<session>.log` | `summarizeDaemonLogs`（logs 直下の全 `daemon-*.log`） | `spotter diagnostics` の daemon 要約 | 異常終了でも致命エラー行は残る。回収（`pruneDaemonLogs`）の失敗は `failed` 件数として daemon ログに 1 行残り、daemon 起動は失敗させない |
 | 実行時エラー | hook / daemon の observer → `runtime-error-store` | `~/.spotter/runtime-errors-v1.json` | `runtime-error-reporter`（報告 cursor と ACK で管理） | BugHub、`spotter diagnostics runtime-errors` | 未 ACK の記録は cursor より後ろに残り、次回に再送（本表の対象外） |
 | daemon の pid / socket | `startDaemon` | `~/.spotter/runtime/session-<id>.pid`、socket | status、起動時の孤児掃除 | `spotter status` | 異常終了では pid が残り、次の daemon 起動が掃除する |
-| codex-cli 一時 dir | `codex-cli-backend` | OS の一時 dir | 呼出し内だけ | なし | 呼出し内で `rm -r`。異常終了なら OS が回収 |
+| codex-cli 一時 dir | `codex-cli-backend` | OS の一時 dir（`spotter-codex-cli-*`） | 呼出し内だけ | なし | 正常な呼出しは finally で `rm -r`。強制終了（kill、電源断）では残る。Spotter は次の呼出しでも掃除しないので、回収は OS の再起動や一時領域の掃除に依存し、Windows の `%TEMP%` は自動では消えない。実測は 3 端末（main-server・rabbit・local）で 0 件、fox と macbook は未測定 |
 | 評価 / tool 台帳 | evaluation store、tool-db refresh | `evaluation.db`、`tool-db*.json` | dashboard、監査 | dashboard、監査入力 | 台帳は現在の tool 集合に合わせて削る。実測 4 MB 以下 |
 
 ### 2-1. 変更前（1.9.9）の保持
@@ -46,6 +46,7 @@
   - この 2 世代は診断用であり、保持が必要な原本をここへ任せない。
 - **daemon ログ**
   - daemon 起動時に `pruneDaemonLogs` が、自分の log 以外の `daemon-<session>.log` を回収する。条件は全部満たすときだけ：logs 直下の通常 file（symlink は対象外）、この user の所有、最終更新が 30 日より古い、その session の `runtime/session-<id>.pid` が無い。
+  - pid file の有無は `lstat` が ENOENT を返したときだけ「無し」とする。それ以外の読取失敗（EACCES、EIO など）は稼働中かどうか不明なので、その log を残して `failed` に数える。
   - pid file がある log は、稼働中か異常終了かを区別できないので残す（pid が残り続ければ log も残る）。daemon が起動しない間は古い log も残る。「診断は 30 日以内」は保証でなく、残存する古い log や pid 付きの log は診断に入る。
   - 回収の失敗は `failed` として数え、daemon ログに 1 行残す。回収は完了扱いにせず、daemon の起動と元の hook は失敗させない。
 - 上記以外の保存物は増えないか、上限がある。変更しない。
