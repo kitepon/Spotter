@@ -167,3 +167,26 @@ test('pruneDaemonLogs: removes only old logs of sessions without a pid file; kee
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// Windows reports ENOENT (not ENOTDIR) for a path below a regular file, so this fixture cannot produce a non-ENOENT lstat error there.
+test('pruneDaemonLogs: a pid file that cannot be read (not ENOENT) keeps the log and counts a failure', { skip: process.platform === 'win32' }, async () => {
+  const { mkdtemp, mkdir, writeFile, utimes, readdir, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { pruneDaemonLogs } = await import('../src/core/daemon-log-diagnostics.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'spotter-logprune-eacces-'));
+  const logDir = join(root, 'logs');
+  try {
+    await mkdir(logDir);
+    await writeFile(join(logDir, 'daemon-unknown.log'), 'x');
+    const old = new Date(Date.now() - 40 * 86400000);
+    await utimes(join(logDir, 'daemon-unknown.log'), old, old);
+    // A regular file used as runtimeDir makes lstat fail with ENOTDIR, which is not proof of "no pid file".
+    await writeFile(join(root, 'runtime'), 'x');
+    const result = await pruneDaemonLogs({ logDir, runtimeDir: join(root, 'runtime') });
+    assert.deepEqual(result, { removed: 0, kept: 0, failed: 1 });
+    assert.deepEqual(await readdir(logDir), ['daemon-unknown.log']);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

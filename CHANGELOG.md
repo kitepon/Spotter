@@ -3,6 +3,16 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.10 — 2026-11-06
+
+- 消す仕組みが無く増え続けていた2つの保存物に上限を付けた。`hook-events.jsonl`は2 MiBを超えると`hook-events.jsonl.1`へ置き換わり、
+  現行と1世代だけを残す。同時に動くhookが重ねて置き換えないよう、短い`.lock`を取った1 processだけが回転する。
+  `daemon-<session>.log`は、daemon起動時に、30日より古く、そのsessionのpid fileが無い自分の通常fileだけを消す。
+- どちらも努力目標で、厳密な上限や完全な回収ではない。大きな1行、並行writer、rename失敗では上限を超え得る。回収の失敗は
+  daemon logに1行残し、hookとdaemonの起動は失敗させない。
+- `spotter diagnostics`のhook-events行は現行fileだけを数える。回転後は、最初のeventの時刻と`.1`の有無をnoteに出す。
+- 機能図とデータフロー図`docs/architecture-map.md`を追加した。
+
 ## 1.9.9 — 2026-10-26
 
 - runtime errorの即時登録が届いたかどうかを、Codex hookの失敗eventの`runtimeErrorRegistration`に残す。値は`collected`、

@@ -34,7 +34,12 @@ export async function pruneDaemonLogs({
       try {
         const info = await lstat(path);
         if (now - info.mtimeMs <= maxAgeMs || (uid !== null && info.uid !== uid)) continue;
-        if (await lstat(join(runtimeDir, `session-${match[1]}.pid`)).then(() => true, () => false)) {
+        // Only ENOENT proves there is no pid file; any other error (EACCES, EIO) leaves the session unknown.
+        const pidFile = await lstat(join(runtimeDir, `session-${match[1]}.pid`)).then(() => true, (err) => {
+          if (err?.code === 'ENOENT') return false;
+          throw err;
+        });
+        if (pidFile) {
           result.kept += 1;
           continue;
         }
