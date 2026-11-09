@@ -168,7 +168,8 @@ test('pruneDaemonLogs: removes only old logs of sessions without a pid file; kee
   }
 });
 
-test('pruneDaemonLogs: a pid file that cannot be read (not ENOENT) keeps the log and counts a failure', async () => {
+// Windows reports ENOENT (not ENOTDIR) for a path below a regular file, so this fixture cannot produce a non-ENOENT lstat error there.
+test('pruneDaemonLogs: a pid file that cannot be read (not ENOENT) keeps the log and counts a failure', { skip: process.platform === 'win32' }, async () => {
   const { mkdtemp, mkdir, writeFile, utimes, readdir, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
