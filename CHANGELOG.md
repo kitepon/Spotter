@@ -3,6 +3,14 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.11 — 2026-11-11
+
+- Jevのキーを、fileへ書かずに1Passwordから読めるようにした。`~/.spotter/jev.op.env`に`TYPESAFE_API_KEY=op://<保管庫ID>/<項目ID>/credential`と
+  参照だけを書くと、Spotterが`op read -n`で都度読む。1Password CLIとデスクトップappの認証を使い、子の環境から`OP_*`を除く。
+  結果はprocessごとに5分だけmemoryに置き、失敗は覚えない。
+- 読めない時（app未解錠・承認待ち・5秒超過・参照不明）は`E_JEV_CONFIG`で、他backendへは切り替えない。次のhookが最初から再試行する。
+- 既存の`TYPESAFE_API_KEY`・`SPOTTER_JEV_ENV_FILE`・`~/.spotter/jev.env`の動作と優先順位は変えない。
+
 ## 1.9.10 — 2026-11-06
 
 - 消す仕組みが無く増え続けていた2つの保存物に上限を付けた。`hook-events.jsonl`は2 MiBを超えると`hook-events.jsonl.1`へ置き換わり、

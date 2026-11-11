@@ -166,7 +166,8 @@ test('タイムアウトと通信失敗は秘密を含めず返す', async () =>
 test('認証fileは不在だけ未設定とし、破損・明示pathの失敗を隠さない', () => {
   const home = mkdtempSync(join(tmpdir(), 'spotter-jev-'));
   try {
-    assert.equal(resolveJevApiKey({ env: { HOME: home } }), null);
+    // opt-inの1Password読取りは、jev.op.envが無ければ一切起動しない（opが無い環境をそのまま使える）
+    assert.equal(resolveJevApiKey({ env: { HOME: home }, execFileFn: () => { throw new Error('op must not run'); } }), null);
     const path = join(home, 'key.env');
     writeFileSync(path, 'TYPESAFE_API_KEY="file-secret"\n');
     assert.equal(resolveJevApiKey({ env: { SPOTTER_JEV_ENV_FILE: path } }), 'file-secret');
@@ -176,6 +177,47 @@ test('認証fileは不在だけ未設定とし、破損・明示pathの失敗を
     assert.throws(() => resolveJevApiKey({ env: { SPOTTER_JEV_ENV_FILE: join(home, 'missing') } }), { code: 'E_JEV_CONFIG' });
     assert.throws(() => createAuditorBackend({ backend: 'jev', env: { HOME: home } }), { code: 'E_JEV_AUTH' });
     assert.equal(selectAuditorBackend({ hostAgent: 'codex', env: { HOME: home } }).backend, 'codex-cli');
+  } finally { rmSync(home, { recursive: true }); }
+});
+
+test('jev.op.envの参照だけをop readで読み、OP_*を渡さず、失敗は覚えず、cacheは5分で切れる', () => {
+  const home = mkdtempSync(join(tmpdir(), 'spotter-jev-op-'));
+  const ref = 'op://vault/item/credential';
+  try {
+    mkdirSync(join(home, '.spotter'));
+    writeFileSync(join(home, '.spotter', 'jev.op.env'), `TYPESAFE_API_KEY=${ref}\n`);
+    const calls = [];
+    let result = 'op-secret\n';
+    const execFileFn = (cmd, args, options) => {
+      calls.push({ cmd, args, env: options.env, timeout: options.timeout });
+      if (result instanceof Error) throw result;
+      return result;
+    };
+    let clock = 0;
+    const opts = { env: { HOME: home, OP_SERVICE_ACCOUNT_TOKEN: 'x', PATH: '/bin' }, execFileFn, opCache: new Map(), now: () => clock };
+    assert.equal(resolveJevApiKey(opts), 'op-secret');
+    assert.deepEqual(calls[0].args, ['read', '-n', ref]);
+    assert.equal(calls[0].cmd, 'op');
+    assert.equal(calls[0].timeout, 5000);
+    assert.equal(Object.keys(calls[0].env).some((name) => name.startsWith('OP_')), false);
+    assert.equal(resolveJevApiKey(opts), 'op-secret');
+    assert.equal(calls.length, 1);
+    clock = 5 * 60_000;
+    resolveJevApiKey(opts);
+    assert.equal(calls.length, 2);
+    for (const bad of [new Error('locked'), '  \n']) {
+      result = bad;
+      clock += 5 * 60_000;
+      assert.throws(() => resolveJevApiKey(opts), (error) => error.code === 'E_JEV_CONFIG' && !error.message.includes('op-secret'));
+    }
+    result = 'op-secret';
+    assert.equal(resolveJevApiKey(opts), 'op-secret');
+    // literalのjev.envが先に効き、環境変数はそのさらに先に効く
+    writeFileSync(join(home, '.spotter', 'jev.env'), 'TYPESAFE_API_KEY=literal\n');
+    const before = calls.length;
+    assert.equal(resolveJevApiKey({ ...opts, opCache: new Map() }), 'literal');
+    assert.equal(resolveJevApiKey({ ...opts, env: { ...opts.env, TYPESAFE_API_KEY: 'env-key' } }), 'env-key');
+    assert.equal(calls.length, before);
   } finally { rmSync(home, { recursive: true }); }
 });
 

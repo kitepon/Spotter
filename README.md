@@ -117,6 +117,8 @@ After publication, verify the registry version and install that exact version on
 
 `TYPESAFE_API_KEY`を環境変数または所有者だけが読める`~/.spotter/jev.env`に設定します。
 `SPOTTER_JEV_ENV_FILE`で既存env fileの絶対パスも指定できます。`spotter doctor`で設定を確認します。
+キーをfileに置かない場合は、`~/.spotter/jev.op.env`に`TYPESAFE_API_KEY=op://<vault-id>/<item-id>/credential`と参照だけを書きます。
+Spotterが`op read -n`で都度読みます（1Password CLIとデスクトップappの認証が必要）。読めない時は`E_JEV_CONFIG`です。
 Jevは旧backendの明示指定にも優先し、失敗時も他modelへ切り替えません。
 Claudeの既存sessionは設定後に再起動し、Codexは次のhookから設定を読みます。
 
