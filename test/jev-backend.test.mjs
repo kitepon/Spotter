@@ -166,7 +166,8 @@ test('タイムアウトと通信失敗は秘密を含めず返す', async () =>
 test('認証fileは不在だけ未設定とし、破損・明示pathの失敗を隠さない', () => {
   const home = mkdtempSync(join(tmpdir(), 'spotter-jev-'));
   try {
-    assert.equal(resolveJevApiKey({ env: { HOME: home } }), null);
+    // opt-inの1Password読取りは、jev.op.envが無ければ一切起動しない（opが無い環境をそのまま使える）
+    assert.equal(resolveJevApiKey({ env: { HOME: home }, execFileFn: () => { throw new Error('op must not run'); } }), null);
     const path = join(home, 'key.env');
     writeFileSync(path, 'TYPESAFE_API_KEY="file-secret"\n');
     assert.equal(resolveJevApiKey({ env: { SPOTTER_JEV_ENV_FILE: path } }), 'file-secret');
