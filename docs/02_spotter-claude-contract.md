@@ -449,9 +449,11 @@ improvement evidence and never becomes auditor input. The operational interpreta
 Primary auditor backend は `UserPromptSubmit` / `Stop` 相当の主判定を返す経路です。
 この backend は hook hot path 上で `{pass, missing_tools}` または `SpotterJudgment` を返し、
 host-facing projection の入力になります。Jev認証があればhostと旧backend明示指定にかかわらずJevを選びます。
-認証は`TYPESAFE_API_KEY`、`SPOTTER_JEV_ENV_FILE`指定のenv file、既定`~/.spotter/jev.env`の順に
+認証は`TYPESAFE_API_KEY`、`SPOTTER_JEV_ENV_FILE`指定のenv file、既定`~/.spotter/jev.env`、既定`~/.spotter/jev.op.env`の順に
 解決します。fileのキーは`TYPESAFE_API_KEY`です。既定fileの不在だけを未設定として扱い、指定fileの
-不在・読取失敗・キー欠落は`E_JEV_CONFIG`です。Jev未設定時のauto selectionでは、Claude host は configuration-time に
+不在・読取失敗・キー欠落は`E_JEV_CONFIG`です。fileの値が`op://`で始まる時は1Password CLIの`op read -n`で値を読みます
+（子の環境から`OP_*`を除き、デスクトップappの認証を使い、5秒で打ち切る。結果はprocessごとに5分だけmemoryに置く）。
+読めない時も`E_JEV_CONFIG`で、他backendへは切り替えません。Jev未設定時のauto selectionでは、Claude host は configuration-time に
 Codex CLI が PATH にあれば `codex-cli`、なければ `haiku`、Codex host は `codex-cli` を選ぶ。
 `SPOTTER_AUDITOR_BACKEND` の明示 override はJev未設定時だけhost auto selectionより優先する。一度選んだ backend が
 runtime で失敗しても、別 backend へ silent retry しない。

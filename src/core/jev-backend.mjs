@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -18,24 +19,59 @@ function failure(code, stage = 'unknown', diagnostics = null) {
   });
 }
 
+const OP_READ_TIMEOUT_MS = 5_000;
+const OP_CACHE_MS = 5 * 60_000;
+// 失敗は覚えない。次のprocessも次の呼出しも最初から読み直す。
+const defaultOpCache = new Map();
+
+// 1Passwordのデスクトップapp認証を使うので、service accountなどのOP_*は子へ渡さない。
+// macOSのhookのPATHにはHomebrewが無いことがあるため、darwinだけ足す。
+function readOpReference(ref, { env, execFileFn, opCache, now }) {
+  const hit = opCache.get(ref);
+  if (hit && now() - hit.at < OP_CACHE_MS) return hit.value;
+  const childEnv = Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith('OP_')));
+  if (process.platform === 'darwin') {
+    childEnv.PATH = [childEnv.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(':');
+  }
+  let value;
+  try {
+    value = execFileFn('op', ['read', '-n', ref], {
+      env: childEnv, encoding: 'utf8', timeout: OP_READ_TIMEOUT_MS, maxBuffer: 64 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
+    }).trim();
+  } catch { throw failure('E_JEV_CONFIG', 'op_reference'); }
+  if (!value) throw failure('E_JEV_CONFIG', 'op_reference');
+  opCache.set(ref, { value, at: now() });
+  return value;
+}
+
 // 秘密は呼出し時だけ読み、設定・診断・例外へ転記しない。
-export function resolveJevApiKey({ env = process.env, readFileFn = readFileSync } = {}) {
+// env fileの値が`op://`で始まる時は、1Password CLIで読む（キーをfileに置かない）。
+export function resolveJevApiKey({
+  env = process.env, readFileFn = readFileSync, execFileFn = execFileSync,
+  opCache = defaultOpCache, now = Date.now,
+} = {}) {
   if (typeof env.TYPESAFE_API_KEY === 'string' && env.TYPESAFE_API_KEY.trim()) {
     return env.TYPESAFE_API_KEY.trim();
   }
   const explicit = env.SPOTTER_JEV_ENV_FILE;
-  const path = explicit || join(env.HOME || env.USERPROFILE || homedir(), '.spotter', 'jev.env');
-  let text;
-  try {
-    text = readFileFn(path, 'utf8');
-  } catch (error) {
-    if (!explicit && error.code === 'ENOENT') return null;
-    throw failure('E_JEV_CONFIG');
+  const dir = join(env.HOME || env.USERPROFILE || homedir(), '.spotter');
+  const paths = explicit ? [explicit] : [join(dir, 'jev.env'), join(dir, 'jev.op.env')];
+  for (const path of paths) {
+    let text;
+    try {
+      text = readFileFn(path, 'utf8');
+    } catch (error) {
+      if (!explicit && error.code === 'ENOENT') continue;
+      throw failure('E_JEV_CONFIG');
+    }
+    let key;
+    try { key = parseEnv(text).TYPESAFE_API_KEY; } catch { throw failure('E_JEV_CONFIG'); }
+    if (typeof key !== 'string' || !key.trim()) throw failure('E_JEV_CONFIG');
+    key = key.trim();
+    return key.startsWith('op://') ? readOpReference(key, { env, execFileFn, opCache, now }) : key;
   }
-  let key;
-  try { key = parseEnv(text).TYPESAFE_API_KEY; } catch { throw failure('E_JEV_CONFIG'); }
-  if (typeof key !== 'string' || !key.trim()) throw failure('E_JEV_CONFIG');
-  return key.trim();
+  return null;
 }
 
 export function jevSelection() {

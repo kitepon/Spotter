@@ -118,6 +118,9 @@ GitHubが管理するrunnerのOIDCを使うため、以降の公開にnpm token�
 別の既存env fileを読む場合は`SPOTTER_JEV_ENV_FILE`へその絶対パスを指定できます。
 認証fileは所有者だけが読める権限にしてください。`spotter doctor`で設定の有無を確認できます。
 
+キーをfileに置きたくない時は、`~/.spotter/jev.op.env`へ`TYPESAFE_API_KEY=op://<保管庫ID>/<項目ID>/credential`と参照だけを書きます。
+Spotterが`op read -n`でその都度読みます（1Password CLIと、そのデスクトップappの認証が要ります）。読めない時は`E_JEV_CONFIG`になります。
+
 認証設定があれば、`SPOTTER_AUDITOR_BACKEND`や`--backend`の旧model指定よりJevを優先します。
 Jevの認証失効・通信失敗・利用上限・不正応答でも他modelを呼びません。明示した認証fileの
 読取失敗やキー欠落は設定エラーになります。設定後、Claudeの既存sessionは再起動してください。
