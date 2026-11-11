@@ -3,6 +3,12 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.12 — 2026-11-11
+
+- 1Passwordの参照を読む`op read`の打ち切りを5秒から15秒へ伸ばした。MacBookの実測では、初回の読取りが4.4〜5.2秒かかり、
+  5秒ではほぼ届かなかった（2回目以降は約1.3秒）。読めない時は`E_JEV_CONFIG`で、他backendへは切り替えない。
+  参照fileを置かない利用者の動作は変わらない。
+
 ## 1.9.11 — 2026-11-11
 
 - Jevのキーを、fileへ書かずに1Passwordから読めるようにした。`~/.spotter/jev.op.env`に`TYPESAFE_API_KEY=op://<保管庫ID>/<項目ID>/credential`と
