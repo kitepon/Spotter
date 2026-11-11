@@ -198,7 +198,7 @@ test('jev.op.envの参照だけをop readで読み、OP_*を渡さず、失敗�
     assert.equal(resolveJevApiKey(opts), 'op-secret');
     assert.deepEqual(calls[0].args, ['read', '-n', ref]);
     assert.equal(calls[0].cmd, 'op');
-    assert.equal(calls[0].timeout, 5000);
+    assert.equal(calls[0].timeout, 15000);
     assert.equal(Object.keys(calls[0].env).some((name) => name.startsWith('OP_')), false);
     assert.equal(resolveJevApiKey(opts), 'op-secret');
     assert.equal(calls.length, 1);

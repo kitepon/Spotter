@@ -19,7 +19,7 @@ function failure(code, stage = 'unknown', diagnostics = null) {
   });
 }
 
-const OP_READ_TIMEOUT_MS = 5_000;
+const OP_READ_TIMEOUT_MS = 15_000;
 const OP_CACHE_MS = 5 * 60_000;
 // 失敗は覚えない。次のprocessも次の呼出しも最初から読み直す。
 const defaultOpCache = new Map();
