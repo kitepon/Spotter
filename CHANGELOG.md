@@ -8,6 +8,8 @@
 - 1Passwordの参照を読む`op read`の打ち切りを5秒から15秒へ伸ばした。MacBookの実測では、初回の読取りが4.4〜5.2秒かかり、
   5秒ではほぼ届かなかった（2回目以降は約1.3秒）。読めない時は`E_JEV_CONFIG`で、他backendへは切り替えない。
   参照fileを置かない利用者の動作は変わらない。
+- codex-cliが非ゼロ終了した時、daemonログに`handler error detail`行（終了コード・所要時間・出力バイト数・固定ラベル）を1行足した。
+  codexの出力本文はログへ書かない。既存の`handler error`行と`spotter diagnostics logs`の集計は変わらない。
 
 ## 1.9.11 — 2026-11-11
 

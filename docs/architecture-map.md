@@ -8,7 +8,7 @@
 | 単位 | 場所 | 役割 | 入力 | 出力 | 状態の持ち主 | 失敗時 |
 | --- | --- | --- | --- | --- | --- | --- |
 | hook 入口 | src/hooks, src/cli/*-hook-cmd.mjs | 各 harness（Claude / Codex / Cursor / Grok）の hook を受け、監査を依頼する | harness の hook 入力（stdin） | hook 応答、hook event | なし（下の記録単位へ書く） | hook は止めない。記録の失敗は握りつぶさず stderr に出す |
-| daemon | src/daemon, src/cli/daemon-cmd.mjs | セッションごとの常駐。監査呼出しを仲介し、SessionEnd か無通信 30 分で終わる | Unix socket / named pipe の要求 | 監査結果、daemon ログ | `~/.spotter/runtime/session-*.pid`、socket、`~/.spotter/logs/daemon-<session>.log` | 致命エラーは同期で log に残して終了 |
+| daemon | src/daemon, src/cli/daemon-cmd.mjs | セッションごとの常駐。監査呼出しを仲介し、SessionEnd か無通信 30 分で終わる | Unix socket / named pipe の要求 | 監査結果、daemon ログ | `~/.spotter/runtime/session-*.pid`、socket、`~/.spotter/logs/daemon-<session>.log` | 致命エラーは同期で log に残して終了。codex-cli の非ゼロ終了は `handler error detail` 行に終了コード・所要時間・出力バイト数・固定ラベルだけを残す（出力本文は書かない） |
 | 監査 backend | src/core/{jev,auditor,codex-cli}-backend.mjs ほか | 呼び出した tool が足りているかを判定する | tool 台帳、会話の抜粋 | SpotterJudgment | codex-cli だけ一時 dir（呼出しごとに作り、終了時に消す） | 型付きの AuditorBackendError |
 | Jev 認証解決 | src/core/jev-backend.mjs `resolveJevApiKey` | 監査 backend が使う TypeSafe キーを呼出し時だけ解く。`op://` の参照は 1Password CLI で読む | `TYPESAFE_API_KEY`、`SPOTTER_JEV_ENV_FILE`、`~/.spotter/jev.env`（キーそのもの）、`~/.spotter/jev.op.env`（`op://` の参照だけ、秘密でない） | キー文字列（process 内だけ。参照の解決結果は 5 分だけ memory に置く） | 参照 file は利用者。キーはどこにも書かない | file の読取・破損・参照の解決失敗（app 未解錠・承認待ち・15 秒超過・参照不明）は `E_JEV_CONFIG`。別 backend へは切り替えず、次の hook が最初から再試行する |
 | tool 台帳 | src/tool-db | host ごとの tool 一覧と説明を集める | host の設定、MCP | `tool-db*.json` | `~/.spotter/tool-db*.json`、`<project>/.spotter/tool-db*.json` | 一時的な取得失敗では前回の値を残す |
