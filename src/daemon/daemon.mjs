@@ -45,6 +45,7 @@ import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
 import { createEvaluationStore } from '../core/evaluation-store.mjs';
 import { version } from '../version.mjs';
+import { describeCodexExit } from '../core/codex-cli-backend.mjs';
 const DEFAULT_HAIKU_CALL_WINDOW_MS = 10_000;
 // Phase A (hook parity, 2026-05-08): short-final + 0 used_tools のターンは Stop auditor を skip。
 // Codex 側 `shouldSkipShortCodexStop` と同じ閾値 (120 chars)。閾値 <= 0 で機能無効。
@@ -411,6 +412,9 @@ export async function startDaemon({
   const onErrorFn = (err, envelope) => {
     const evt = envelope?.event ?? '(pre-parse)';
     logFn(`handler error on ${evt}: ${err.code ?? 'E_INTERNAL'}: ${err.message}`);
+    // Separate line so `handler error on` parsing stays unchanged; labels only, never codex output.
+    const exitDetail = err.backend === 'codex-cli' ? describeCodexExit(err.diagnostics) : null;
+    if (exitDetail) logFn(`handler error detail on ${evt}: ${exitDetail}`);
     if (envelope?.event === 'tool_used' && envelope.payload?.evaluation_observed === true) {
       state.evaluationUsageIncomplete = true;
     }

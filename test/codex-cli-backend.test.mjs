@@ -12,6 +12,7 @@ import {
   CODEX_AUDITOR_SCHEMA,
   createCodexCliAuditorBackend as createCodexCliAuditorBackendImpl,
   isCodexAuthFailure,
+  describeCodexExit,
   isCodexModelUnavailableFailure,
   isCodexUsageLimitFailure,
   parseCodexTurnUsageLine,
@@ -930,4 +931,14 @@ test('createAuditorBackend: codex-cli now returns the Codex CLI backend', () => 
 test('codex-cli backend source does not depend on sidecar policy', async () => {
   const source = await readFile(new URL('../src/core/codex-cli-backend.mjs', import.meta.url), 'utf8');
   assert.ok(!source.includes('codex-sidecar-policy'));
+});
+
+test('describeCodexExit: reports exit code and fixed labels, never the output text', () => {
+  const secret = 'sk-SECRET-TOKEN';
+  const line = describeCodexExit({ exitCode: 1, durationMs: 14000, stdout: '', stderr: `stream disconnected ${secret}` });
+  assert.equal(line, 'exit_code=1 duration_ms=14000 stdout_bytes=0 stderr_bytes=' + Buffer.byteLength(`stream disconnected ${secret}`) + ' labels=network');
+  assert.ok(!line.includes(secret));
+  assert.match(describeCodexExit({ exitCode: 2, durationMs: 1, stdout: 'x', stderr: '' }), /labels=other$/);
+  assert.equal(describeCodexExit({ exitCode: null }), null);
+  assert.equal(describeCodexExit(null), null);
 });
