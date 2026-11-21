@@ -82,8 +82,17 @@ export function isCodexModelUnavailableFailure(text) {
 
 // Fixed labels only: the log must say why codex exited without ever copying its output, which
 // can hold prompt text or tokens. Order is the report order; unmatched output reports `other`.
+const CODEX_NETWORK_KINDS = [
+  ['econnreset', ['econnreset', 'connection reset']],
+  ['econnrefused', ['econnrefused']],
+  ['enotfound', ['enotfound']],
+  ['etimedout', ['etimedout']],
+  ['stream_disconnected', ['stream disconnected']],
+  ['request_send_failed', ['error sending request']],
+  ['tls', ['tls handshake', 'certificate']],
+];
 const CODEX_EXIT_LABELS = [
-  ['network', ['econnreset', 'econnrefused', 'enotfound', 'etimedout', 'connection reset', 'stream disconnected', 'error sending request', 'tls handshake', 'certificate']],
+  ['network', CODEX_NETWORK_KINDS.flatMap(([, markers]) => markers)],
   ['http_5xx', ['bad gateway', 'service unavailable', 'gateway timeout', 'internal server error']],
   ['rate_limit', ['too many requests', '429']],
   ['permission', ['permission denied', 'eacces', 'access is denied']],
@@ -96,7 +105,10 @@ export function describeCodexExit(diagnostics) {
   if (!diagnostics || !Number.isInteger(diagnostics.exitCode)) return null;
   const text = `${diagnostics.stdout ?? ''}\n${diagnostics.stderr ?? ''}`.toLowerCase();
   const labels = CODEX_EXIT_LABELS.filter(([, markers]) => markers.some((m) => text.includes(m))).map(([label]) => label);
-  return `exit_code=${diagnostics.exitCode} duration_ms=${diagnostics.durationMs ?? 'unknown'} stdout_bytes=${Buffer.byteLength(diagnostics.stdout ?? '')} stderr_bytes=${Buffer.byteLength(diagnostics.stderr ?? '')} labels=${labels.join(',') || 'other'}`;
+  // network_kinds says which network failure matched; it is added only when `network` did.
+  const kinds = CODEX_NETWORK_KINDS.filter(([, markers]) => markers.some((m) => text.includes(m))).map(([kind]) => kind);
+  const kindsField = kinds.length > 0 ? ` network_kinds=${kinds.join(',')}` : '';
+  return `exit_code=${diagnostics.exitCode} duration_ms=${diagnostics.durationMs ?? 'unknown'} stdout_bytes=${Buffer.byteLength(diagnostics.stdout ?? '')} stderr_bytes=${Buffer.byteLength(diagnostics.stderr ?? '')} labels=${labels.join(',') || 'other'}${kindsField}`;
 }
 
 export function parseCodexTurnUsageLine(line) {

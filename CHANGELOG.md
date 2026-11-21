@@ -3,6 +3,12 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.13 — 2026-11-22
+
+- codex-cliの非ゼロ終了を記録する`handler error detail`行に、`labels=network`の時だけ`network_kinds=`を足した。当たった文言の種類を固定の語
+  （`econnreset`・`econnrefused`・`enotfound`・`etimedout`・`stream_disconnected`・`request_send_failed`・`tls`）で並べる。
+  codexの出力本文は書かない。失敗時の動作と判定は変えない。
+
 ## 1.9.12 — 2026-11-11
 
 - 1Passwordの参照を読む`op read`の打ち切りを5秒から15秒へ伸ばした。MacBookの実測では、初回の読取りが4.4〜5.2秒かかり、
