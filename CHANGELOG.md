@@ -3,6 +3,13 @@
 各節はそのversion公開時点の変更記録であり、後続versionにより置換された仕様を含む。
 現行runtime契約は[`docs/00_overview.md`](https://github.com/kitepon/Spotter/blob/main/docs/00_overview.md)から辿る。
 
+## 1.9.14 — 2026-11-28
+
+- BugHubへの実行時エラー報告の署名を、共有鍵のHMACからBugHub-ES256へ替えた。秘密鍵はBellTeamの認証仲介の中にだけあり、端末には置かない。
+  端末の署名設定`~/.config/spotter/bughub-sign.json`（Windowsは`%LOCALAPPDATA%\Spotter\bughub-sign.json`）に`key_id`と署名commandの種類
+  （`auth sign`、または仲介のhostへ固定commandをsshで呼ぶ）を書く。応答の署名はBugHubの公開鍵で確かめてからcursorを進める。
+- 署名できない時は`sign_failed`で送らず、次の周期に再送する。旧`~/.config/bughub/product-credentials/spotter.json`は読まない。
+
 ## 1.9.13 — 2026-11-22
 
 - codex-cliの非ゼロ終了を記録する`handler error detail`行に、`labels=network`の時だけ`network_kinds=`を足した。当たった文言の種類を固定の語

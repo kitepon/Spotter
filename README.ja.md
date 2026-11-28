@@ -312,8 +312,12 @@ statusだけを返し、store/config pathやrecord本文を出しません。
 指揮官の端末で送信を有効にする場合、所有者だけが読める通常ファイル（0600）を
 `~/.config/spotter/runtime-errors.json`（Windowsは`%LOCALAPPDATA%\Spotter\runtime-errors-config.json`）
 に置きます。内容は`{"schema_version":"1.0","collection":{"enabled":true},"reporting":{"enabled":true}}`です。
-BugHub担当が別途、端末ごとの合鍵を`~/.config/bughub/product-credentials/spotter.json`
-（Windowsは`%LOCALAPPDATA%\bughub\product-credentials\spotter.json`）へ置きます。
+報告はBugHub-ES256で署名します。秘密鍵はBellTeamの認証仲介の外へ出ないので、端末に秘密は置きません。置くのは署名設定
+`~/.config/spotter/bughub-sign.json`（Windowsは`%LOCALAPPDATA%\Spotter\bughub-sign.json`、`0600`）だけで、BugHubの`key_id`と、
+仲介へ署名を頼む方法を書きます。仲介が動くhostでは`"sign":{"kind":"auth","command":"<authの絶対path>","item":"bughub-product-spotter-<host>","cwd":"<許可された作業folder>"}`
+で、その作業folderから`auth sign <item>`を呼びます。他のhostでは`"sign":{"kind":"ssh","command":"<sshの絶対path>","key":"<秘密鍵>","known_hosts":"<固定したfile>","target":"<user>@<仲介のhost>"}`で、
+仲介のhostにある固定commandをsshで呼びます（`BatchMode`・`IdentitiesOnly`）。どちらも`<ts>\n<本文のsha256>`を一時fileで渡し、署名（base64）だけを受け取ります。
+署名できない時は`sign_failed`で、cursorを進めず次の1時間で再送します。応答の署名はBugHubの公開鍵で確かめます。
 `spotter runtime-errors report`を実行し、継続時はlaunchd、systemd user timer、Windows Task Schedulerで
 同じコマンドを1時間に1回起動します。未受領だけを送信し、署名を検証した200応答だけでackします。
 配布物の`ops/runtime-reporting/`にlaunchdとsystemd user timerの雛形があります。
