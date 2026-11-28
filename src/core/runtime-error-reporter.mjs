@@ -26,7 +26,8 @@ export function signCommand({ sign }) {
     ? { command: sign.command, args: ['sign', sign.item], cwd: sign.cwd }
     : {
       command: sign.command,
-      args: ['-T', '-i', sign.key, '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes',
+      // -F none と IdentityAgent=none で、端末の ssh 設定・agent の別の鍵を使わせない（その鍵なら固定 command でなく shell に入れてしまう）。
+      args: ['-T', '-F', 'none', '-i', sign.key, '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
         '-o', `UserKnownHostsFile=${sign.known_hosts}`, sign.target],
     };
 }

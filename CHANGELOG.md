@@ -8,6 +8,7 @@
 - BugHubへの実行時エラー報告の署名を、共有鍵のHMACからBugHub-ES256へ替えた。秘密鍵はBellTeamの認証仲介の中にだけあり、端末には置かない。
   端末の署名設定`~/.config/spotter/bughub-sign.json`（Windowsは`%LOCALAPPDATA%\Spotter\bughub-sign.json`）に`key_id`と署名commandの種類
   （`auth sign`、または仲介のhostへ固定commandをsshで呼ぶ）を書く。応答の署名はBugHubの公開鍵で確かめてからcursorを進める。
+- 署名のsshは`-F none`と`IdentityAgent=none`で、端末のssh設定やagentの別の鍵を使わせない（その鍵だと固定commandでなくshellに入れてしまう）。
 - 署名できない時は`sign_failed`で送らず、次の周期に再送する。旧`~/.config/bughub/product-credentials/spotter.json`は読まない。
 
 ## 1.9.13 — 2026-11-22

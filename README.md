@@ -347,7 +347,7 @@ terminal holds no secret: only a `0600` signer file at `~/.config/spotter/bughub
 `{"schema_version":"1.0","key_id":"<id>","sign":{"kind":"auth","command":"<abs path of auth>","item":"bughub-product-spotter-<host>","cwd":"<granted folder>"}}`
 runs `auth sign <item>` in the granted folder (the host that runs the module). On other hosts use
 `"sign":{"kind":"ssh","command":"<abs path of ssh>","key":"<private key>","known_hosts":"<pinned file>","target":"<user>@<module host>"}`,
-which runs ssh with `BatchMode` and `IdentitiesOnly` and a forced command on the module host. Both read the text
+which runs ssh with `-F none`, `IdentityAgent=none`, `IdentitiesOnly`, `BatchMode` and a pinned host key, so only that one key can log in, to a forced command on the module host. Both read the text
 `<ts>\n<sha256 of body>` from a temporary file and print the base64 signature. The 200 response is checked with
 BugHub's response public key before the cursor moves; a failed signature reports `sign_failed` and retries next hour. Run `spotter runtime-errors report`
 once, then schedule the same command hourly with launchd, a systemd user timer, or Windows Task Scheduler.

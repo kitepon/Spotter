@@ -42,6 +42,8 @@ test('signing runs the module command for its kind and accepts only a 64-byte si
   const ssh = signCommand({ sign: { kind: 'ssh', command: '/usr/bin/ssh', key: '/k', known_hosts: '/h', target: 'kite@192.168.1.2' } });
   assert.equal(ssh.args.at(-1), 'kite@192.168.1.2');
   assert.ok(ssh.args.includes('IdentitiesOnly=yes') && ssh.args.includes('UserKnownHostsFile=/h'));
+  assert.deepEqual(ssh.args.slice(1, 3), ['-F', 'none']);
+  assert.ok(ssh.args.includes('IdentityAgent=none') && ssh.args.includes('StrictHostKeyChecking=yes'));
   const sig = ieee(requestPair, 'x');
   let seen;
   assert.equal(await signRuntimeReportText(signer, 'text', async (command, args, options) => { seen = { command, args, options }; return { code: 0, stdout: `${sig}\n` }; }), sig);

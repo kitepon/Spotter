@@ -316,7 +316,7 @@ statusだけを返し、store/config pathやrecord本文を出しません。
 `~/.config/spotter/bughub-sign.json`（Windowsは`%LOCALAPPDATA%\Spotter\bughub-sign.json`、`0600`）だけで、BugHubの`key_id`と、
 仲介へ署名を頼む方法を書きます。仲介が動くhostでは`"sign":{"kind":"auth","command":"<authの絶対path>","item":"bughub-product-spotter-<host>","cwd":"<許可された作業folder>"}`
 で、その作業folderから`auth sign <item>`を呼びます。他のhostでは`"sign":{"kind":"ssh","command":"<sshの絶対path>","key":"<秘密鍵>","known_hosts":"<固定したfile>","target":"<user>@<仲介のhost>"}`で、
-仲介のhostにある固定commandをsshで呼びます（`BatchMode`・`IdentitiesOnly`）。どちらも`<ts>\n<本文のsha256>`を一時fileで渡し、署名（base64）だけを受け取ります。
+仲介のhostにある固定commandをsshで呼びます（`-F none`・`IdentityAgent=none`・`IdentitiesOnly`・`BatchMode`・固定したhost key。端末のssh設定やagentの別の鍵は使わず、この1本の鍵だけが入れる）。どちらも`<ts>\n<本文のsha256>`を一時fileで渡し、署名（base64）だけを受け取ります。
 署名できない時は`sign_failed`で、cursorを進めず次の1時間で再送します。応答の署名はBugHubの公開鍵で確かめます。
 `spotter runtime-errors report`を実行し、継続時はlaunchd、systemd user timer、Windows Task Schedulerで
 同じコマンドを1時間に1回起動します。未受領だけを送信し、署名を検証した200応答だけでackします。
