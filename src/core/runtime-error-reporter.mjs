@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createPublicKey, randomUUID, verify } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { version } from '../version.mjs';
 import { readOwnerPrivateFile, writeOwnerPrivateFile } from '../platform/owner-private-file.mjs';
@@ -8,7 +8,10 @@ import {
   readRuntimeErrorSnapshot,
   readRuntimeErrorStoreStatus,
 } from './runtime-error-store.mjs';
-import { readRuntimeReportConfig, readRuntimeReportCredential } from './runtime-report-config.mjs';
+import { runWithStdinFile } from '../platform/spawn.mjs';
+import {
+  BUGHUB_RESPONSE_KEY, BUGHUB_RUNTIME_ERROR_URL, readRuntimeReportConfig, readRuntimeReportSigner,
+} from './runtime-report-config.mjs';
 
 const MAX_BODY_BYTES = 512 * 1024;
 const FIELDS = [
@@ -16,22 +19,35 @@ const FIELDS = [
   'occurrence_count', 'first_seen', 'last_seen', 'product_version', 'state_schema_version',
 ];
 
-export function signRuntimeReport(secret, ts, bodyBytes) {
-  const digest = createHash('sha256').update(bodyBytes).digest('hex');
-  return createHmac('sha256', Buffer.from(secret, 'utf8')).update(`${ts}\n${digest}`).digest('hex');
+const SIGNATURE = /^[A-Za-z0-9+/]{86}==$/; // ES256 の生の r‖s（64 byte）の base64
+
+export function signCommand({ sign }) {
+  return sign.kind === 'auth'
+    ? { command: sign.command, args: ['sign', sign.item], cwd: sign.cwd }
+    : {
+      command: sign.command,
+      // -F none と IdentityAgent=none で、端末の ssh 設定・agent の別の鍵を使わせない（その鍵なら固定 command でなく shell に入れてしまう）。
+      args: ['-T', '-F', 'none', '-i', sign.key, '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+        '-o', `UserKnownHostsFile=${sign.known_hosts}`, sign.target],
+    };
 }
 
-export function signRuntimeReportReceipt(secret, reportId, receivedAt) {
-  return createHmac('sha256', Buffer.from(secret, 'utf8'))
-    .update(`${reportId}\n${receivedAt}`).digest('hex');
+// 鍵は認証仲介の中にだけある。署名 command の stdout は署名だけで、終了 0 かつ形が合う時だけ使う。
+export async function signRuntimeReportText(signer, text, run = runWithStdinFile) {
+  const { command, args, cwd } = signCommand(signer);
+  const { code, stdout } = await run(command, args, { stdinText: text, cwd });
+  const sig = stdout.trim();
+  if (code !== 0 || !SIGNATURE.test(sig)) throw new Error('runtime report signing failed');
+  return sig;
 }
 
-function verifiedReceipt(value, reportId, secret) {
+export function verifiedReceipt(value, reportId, responseKey = BUGHUB_RESPONSE_KEY) {
   if (!value || value.accepted !== true || value.report_id !== reportId
-    || typeof value.received_at !== 'string' || typeof value.sig !== 'string'
-    || !/^[a-f0-9]{64}$/.test(value.sig)) return false;
-  const expected = signRuntimeReportReceipt(secret, reportId, value.received_at);
-  return timingSafeEqual(Buffer.from(value.sig, 'hex'), Buffer.from(expected, 'hex'));
+    || typeof value.received_at !== 'string' || value.sig_alg !== 'ES256' || !SIGNATURE.test(value.sig)) return false;
+  try {
+    return verify('sha256', Buffer.from(`${reportId}\n${value.received_at}`, 'utf8'),
+      { key: createPublicKey(responseKey), dsaEncoding: 'ieee-p1363' }, Buffer.from(value.sig, 'base64'));
+  } catch { return false; }
 }
 
 function project(record) {
@@ -51,8 +67,8 @@ function credentialBlockPath(storeOptions) {
   return join(dirname(storeOptions.storePath ?? defaultRuntimeErrorStorePath(storeOptions)), 'runtime-report-credential-blocked-v1.json');
 }
 
-function credentialTag(credential) {
-  return createHash('sha256').update(`${credential.key_id}\n${credential.secret}`, 'utf8').digest('hex');
+function credentialTag(signer) {
+  return createHash('sha256').update(signer.key_id, 'utf8').digest('hex');
 }
 
 async function readBlockedCredential(storeOptions) {
@@ -123,8 +139,8 @@ export async function reportRuntimeErrors(options = {}) {
   if (await (options.readBlockedVersion ?? readBlockedVersion)(storeOptions) === installedVersion) {
     return { status: 'invalid_report_blocked' };
   }
-  const credential = await (options.readCredential ?? readRuntimeReportCredential)(options);
-  const tag = credentialTag(credential);
+  const signer = await (options.readSigner ?? readRuntimeReportSigner)(options);
+  const tag = credentialTag(signer);
   if (await (options.readBlockedCredential ?? readBlockedCredential)(storeOptions) === tag) {
     return { status: 'credential_rejected_blocked' };
   }
@@ -152,14 +168,20 @@ export async function reportRuntimeErrors(options = {}) {
     body = candidate;
     cursor = record.sequence;
   }
-  const sig = signRuntimeReport(credential.secret, ts, body);
+  let sig;
+  try {
+    const digest = createHash('sha256').update(body).digest('hex');
+    sig = await (options.sign ?? signRuntimeReportText)(signer, `${ts}\n${digest}`);
+  } catch {
+    return { status: 'sign_failed' };
+  }
   let response;
   try {
-    response = await (options.fetchFn ?? fetch)(credential.url, {
+    response = await (options.fetchFn ?? fetch)(BUGHUB_RUNTIME_ERROR_URL, {
       method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10_000), body,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `BugHub-HMAC-SHA256 key_id=${credential.key_id}, ts=${ts}, sig=${sig}`,
+        Authorization: `BugHub-ES256 key_id=${signer.key_id}, ts=${ts}, sig=${sig}`,
       },
     });
   } catch {
@@ -188,7 +210,7 @@ export async function reportRuntimeErrors(options = {}) {
   } catch {
     return { status: 'unconfirmed', count: payload.runtime_errors.length };
   }
-  if (!verifiedReceipt(receipt, reportId, credential.secret)) {
+  if (!verifiedReceipt(receipt, reportId, options.responseKey)) {
     return { status: 'unconfirmed', count: payload.runtime_errors.length };
   }
   const ack = await (options.acknowledge ?? acknowledgeRuntimeErrors)({ cursor }, storeOptions);

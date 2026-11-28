@@ -10,7 +10,9 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
-import { win32 } from 'node:path';
+import { mkdtemp, open, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, win32 } from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileP = promisify(execFile);
@@ -239,4 +241,26 @@ function defaultFileExists(path) {
 
 function defaultReadFile(path) {
   try { return readFileSync(path, 'utf8'); } catch { return ''; }
+}
+
+
+// stdin を一時 file で渡して実行し、stdout（最大 4 KiB）と終了コードを返す。Windows の ssh は pipe の stdin で止まるため、
+// BugHub 署名の command は file で渡す。時間切れは kill して reject する。
+export async function runWithStdinFile(command, args, { stdinText, cwd, timeoutMs = 15_000 } = {}) {
+  const dir = await mkdtemp(join(tmpdir(), 'spotter-sign-'));
+  try {
+    const path = join(dir, 'stdin');
+    await writeFile(path, stdinText, { mode: 0o600 });
+    const input = await open(path, 'r');
+    try {
+      return await new Promise((resolve, reject) => {
+        const child = spawn(command, args, { cwd, stdio: [input.fd, 'pipe', 'ignore'], windowsHide: true });
+        let stdout = '';
+        const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('command timed out')); }, timeoutMs);
+        child.stdout.on('data', (chunk) => { if (stdout.length < 4096) stdout += chunk; });
+        child.once('error', (error) => { clearTimeout(timer); reject(error); });
+        child.once('close', (code) => { clearTimeout(timer); resolve({ code, stdout }); });
+      });
+    } finally { await input.close(); }
+  } finally { await rm(dir, { recursive: true, force: true }); }
 }

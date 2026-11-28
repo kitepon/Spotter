@@ -341,9 +341,15 @@ at `~/.config/spotter/runtime-errors.json` (Windows: `%LOCALAPPDATA%\Spotter\run
 {"schema_version":"1.0","collection":{"enabled":true},"reporting":{"enabled":true}}
 ```
 
-BugHub's operator supplies a separate `0600` credential at
-`~/.config/bughub/product-credentials/spotter.json` (Windows:
-`%LOCALAPPDATA%\bughub\product-credentials\spotter.json`). Run `spotter runtime-errors report`
+Reports are signed with BugHub-ES256. The private key never leaves BellTeam's authentication module, so the
+terminal holds no secret: only a `0600` signer file at `~/.config/spotter/bughub-sign.json` (Windows:
+`%LOCALAPPDATA%\Spotter\bughub-sign.json`) with the BugHub `key_id` and how to ask the module to sign.
+`{"schema_version":"1.0","key_id":"<id>","sign":{"kind":"auth","command":"<abs path of auth>","item":"bughub-product-spotter-<host>","cwd":"<granted folder>"}}`
+runs `auth sign <item>` in the granted folder (the host that runs the module). On other hosts use
+`"sign":{"kind":"ssh","command":"<abs path of ssh>","key":"<private key>","known_hosts":"<pinned file>","target":"<user>@<module host>"}`,
+which runs ssh with `-F none`, `IdentityAgent=none`, `IdentitiesOnly`, `BatchMode` and a pinned host key, so only that one key can log in, to a forced command on the module host. Both read the text
+`<ts>\n<sha256 of body>` from a temporary file and print the base64 signature. The 200 response is checked with
+BugHub's response public key before the cursor moves; a failed signature reports `sign_failed` and retries next hour. Run `spotter runtime-errors report`
 once, then schedule the same command hourly with launchd, a systemd user timer, or Windows Task Scheduler.
 The package includes launchd and systemd templates in `ops/runtime-reporting/`. Before registering them,
 replace `REPLACE_WITH_ABSOLUTE_NODE_PATH` with the Node.js binary that installed Spotter (`command -v node`)
@@ -356,7 +362,7 @@ same user; it registers the hourly `spotter-runtime-errors` task with a hidden c
 Only unacknowledged records are sent. A signed 200 response advances the cursor; timeout, 5xx, or an
 unverified response leaves it pending. A 422 blocks further sends for that installed version until a
 corrected Spotter version is installed; the block marker is under the private `~/.spotter` state directory
-(Windows: `%LOCALAPPDATA%\Spotter`). A rejected 401/403 credential is paused until it is rotated;
+(Windows: `%LOCALAPPDATA%\Spotter`). A rejected 401/403 `key_id` is paused until it is changed;
 clock-skew responses leave the cursor pending for a later attempt. Disable reporting by changing
 `reporting.enabled` to `false`.
 The Codex SessionStart hook refreshes `.spotter/tool-db.codex.json` in the background
